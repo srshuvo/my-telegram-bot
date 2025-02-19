@@ -119,5 +119,5 @@ async def main():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))  # Render-এর জন্য পোর্ট সেট করুন
-    asyncio.create_task(main())  # Bot চালানো
     uvicorn.run(app, host="0.0.0.0", port=port)  # Webhook সার্ভার চালানো
+    asyncio.run(main())  # Bot চালানো (এই লাইনটি asyncio.run() ব্যবহার করে)
