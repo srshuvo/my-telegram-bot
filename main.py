@@ -1,92 +1,205 @@
-import asyncio
-import logging
 import re
-import os  # ✅ Environment Variables ব্যবহারের জন্য
+import asyncio
+import os
+import logging
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiohttp import web
 
-TOKEN = os.getenv("BOT_TOKEN")  # ✅ এখানে Environment Variable থেকে টোকেন নেওয়া হচ্ছে
+# -------------- Logging সেটআপ --------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-if not TOKEN:
-    raise ValueError("❌ BOT_TOKEN Environment Variable সেট করা হয়নি!")
+# -------------- Environment Variable থেকে BOT_TOKEN নেওয়া --------------
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is not set!")
 
-bot = Bot(token=TOKEN)
+# -------------- Bot এবং Dispatcher Initialization --------------
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-logging.basicConfig(level=logging.INFO)
+# -------------- URL Extract ও Modify করার ফাংশন --------------
+def extract_modified_urls(text: str) -> list:
+    urls = re.findall(r"https?://[^\s]+", text)
+    unique_urls = set()
+    modified_urls = []
+    for url in urls:
+        if "tera" in url and not url.startswith("https://player.terabox.tech/?url="):
+            modified_url = f"https://player.terabox.tech/?url={url}"
+            if modified_url not in unique_urls:
+                unique_urls.add(modified_url)
+                modified_urls.append(modified_url)
+    return modified_urls
 
+# নতুন লিঙ্ক তৈরি করার ফাংশন
+def create_new_link(id: str) -> str:
+    return f"https://mdiskplay.com/terabox/{id}"
 
-def extract_id_from_url(url):
-    """ 🔍 লিংকে 'tera' থাকলে, ID বের করবে """
-    if "tera" in url:
-        match = re.search(r"/s/([a-zA-Z0-9]+)", url)
-        return match.group(1) if match else None
+# ID Extract করার ফাংশন
+def extract_id_from_url(url: str) -> str:
+    match = re.search(r"terabox/(\w+)", url)
+    if match:
+        return match.group(1)
     return None
 
+# Regenerate ফাংশন
+def regenerate_id(id: str) -> str:
+    return id[1:]  # প্রথম অক্ষর বাদ দিয়ে নতুন ID তৈরি
 
-def modify_id(original_id):
-    """ 🔄 Regenerate: ID-এর প্রথম ১টি অক্ষর বাদ দিয়ে নতুন আইডি তৈরি করবে """
-    return original_id[1:] if original_id and len(original_id) > 1 else None
+# -------------- /start কমান্ড হ্যান্ডলার --------------
+@dp.message(F.text == "/start")
+async def welcome_message(message: Message):
+    first_name = message.from_user.first_name or "বন্ধু"
+    welcome_text = (
+        f"✨ স্বাগতম, {first_name}! 🌟\n"
+        "আমাদের সেবায় আপনার আগমনকে স্বাগত জানাই! 💫\n\n"
+        "🔗 যদি আপনি **TERA BOX** লিঙ্ক পাঠান, আমরা সেটি নিরাপদভাবে **PLAY** করে দিব। 🎥✨\n\n"
+        "🤔 যেকোনো প্রশ্ন বা সহায়তার জন্য আমাদের সাথে যোগাযোগ করুন।\n\n"
+        f"✨ Welcome, {first_name}! 🌟\n"
+        "We're thrilled to have you here! 💫\n\n"
+        "🔗 If you send a **TERA BOX** link, we'll safely **PLAY** it for you. 🎥✨\n\n"
+        "🤔 If you have any questions or need assistance, feel free to ask! 😊"
+    )
+    try:
+        await message.reply(welcome_text)
+        # পিন করা বার্তা শুধুমাত্র /start কমান্ডে পিন হবে
+        await pin_server_issue_message(message.chat.id)
+    except Exception as e:
+        logger.error(f"Error sending welcome message: {e}")
 
+# -------------- পিন করা নোটিফিকেশন মেসেজ --------------
+async def pin_server_issue_message(chat_id: int):
+    message_text = (
+        "⚠️ **সার্ভার সমস্যার কারণে বট এর লিঙ্ক পাঠাতে দেরি হতে পারে** ⚠️\n"
+        "📌 **লিঙ্ক পাঠাতে থাকুন, সার্ভার ঠিক হলে সব ভিডিও পাঠানো হবে।**\n\n"
+        "⚠️ **Due to server issues, the bot may take time to send links.** ⚠️\n"
+        "📌 **Keep sending links, and once the server is fixed, all videos will be sent.**"
+    )
 
-async def send_modified_link(message: Message, file_id):
-    """ ✅ নতুন লিংক তৈরি করে ইনলাইন বোতাম সহ পাঠাবে """
-    new_url = f"https://mdiskplay.com/terabox/{file_id}"
+    try:
+        sent_message = await bot.send_message(chat_id, message_text, parse_mode="Markdown")
+        await sent_message.pin()  # শুধুমাত্র /start কমান্ডে পিন হবে
+    except Exception as e:
+        logger.error(f"Error pinning message: {e}")
 
-    keyboard = InlineKeyboardBuilder()
-    keyboard.button(text="🎬 Watch Video", url=new_url)
-    keyboard.button(text="🔗 Share", switch_inline_query=new_url)
-    keyboard.button(text="🔄 Regenerate", callback_data=f"regenerate_{file_id}")
-    keyboard.button(text="🗑️ Delete", callback_data="delete_message")
-    keyboard.adjust(1)
-
-    await message.reply("✅ আপনার লিংক প্রস্তুত!", reply_markup=keyboard.as_markup())
-
-
-@dp.message(F.text)
+# -------------- মেসেজ হ্যান্ডলার: TERA BOX লিঙ্ক modify করা --------------
+@dp.message()
 async def modify_link(message: Message):
-    """ ✅ ইউজারের পাঠানো লিংক থেকে ID বের করে নতুন লিংক তৈরি করবে """
-    text = message.text
+    text = message.text or message.caption
     if not text:
         return
 
-    urls = text.split()
-    for url in urls:
-        file_id = extract_id_from_url(url)
-        if file_id:
-            await send_modified_link(message, file_id)
-            return
-
-    await message.reply("⚠️ কোনো বৈধ লিংক পাওয়া যায়নি!")
-
-
-@dp.callback_query(F.data.startswith("regenerate_"))
-async def regenerate_link(callback: CallbackQuery):
-    """ 🔄 Regenerate বাটন: নতুন আইডি তৈরি করবে """
-    old_id = callback.data.split("_")[1]
-    new_id = modify_id(old_id)
-
-    if not new_id:
-        await callback.answer("⚠️ Regenerate সম্ভব না!", show_alert=True)
+    modified_urls = extract_modified_urls(text)
+    if not modified_urls:
         return
 
-    await callback.message.delete()
-    await send_modified_link(callback.message, new_id)
-    await callback.answer("✅ লিংক নতুনভাবে পরিবর্তন করা হয়েছে!")
+    # টাইপিং ইফেক্ট দেখানোর জন্য
+    await bot.send_chat_action(message.chat.id, action="typing")
+    await asyncio.sleep(1.5)
 
+    # মূল লিঙ্কগুলি মুছে ফেলা
+    for url in modified_urls:
+        text = text.replace(url, "")
 
+    # প্রতিটি modified URL এর জন্য ইনলাইন বাটন তৈরি
+    buttons = []
+    for i, url in enumerate(modified_urls):
+        id = extract_id_from_url(url)
+        new_link = create_new_link(id) if id else url
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"🎬 Watch Video {i+1} - Click to Watch!",
+                url=new_link,
+            ),
+            InlineKeyboardButton(
+                text="🔗 Share this Link Now!",
+                switch_inline_query=new_link
+            )
+        ])
+    buttons.append([
+        InlineKeyboardButton(
+            text="🗑️ Delete This Message",
+            callback_data="delete_message"
+        ),
+        InlineKeyboardButton(
+            text="🔄 Regenerate",
+            callback_data="regenerate_id"
+        )
+    ])
+
+    # কাস্টম স্টাইলিং সহ ইনলাইন কীবোর্ড তৈরি
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    # মেসেজ পাঠানো
+    sent_message = await message.reply(text, reply_markup=keyboard)
+
+# Regenerate Handler
+@dp.callback_query(F.data == "regenerate_id")
+async def regenerate_link(callback: CallbackQuery):
+    original_id = extract_id_from_url(callback.message.text)
+    if not original_id:
+        await callback.answer("❌ Invalid ID!", show_alert=True)
+        return
+
+    new_id = regenerate_id(original_id)
+    new_link = create_new_link(new_id)
+    buttons = [
+        InlineKeyboardButton(
+            text="🎬 Watch Video - Click to Watch!",
+            url=new_link
+        ),
+        InlineKeyboardButton(
+            text="🔗 Share this Link Now!",
+            switch_inline_query=new_link
+        ),
+        InlineKeyboardButton(
+            text="🗑️ Delete This Message",
+            callback_data="delete_message"
+        ),
+        InlineKeyboardButton(
+            text="🔄 Regenerate Again",
+            callback_data="regenerate_id"
+        ),
+    ]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[buttons])
+
+    await bot.edit_message_text(
+        "New Link Generated!",
+        callback.message.chat.id,
+        callback.message.message_id,
+        reply_markup=keyboard
+    )
+    await callback.answer("✅ New link generated!", show_alert=True)
+
+# -------------- Delete Button Handler --------------
 @dp.callback_query(F.data == "delete_message")
 async def delete_message(callback: CallbackQuery):
-    """ 🗑️ Delete বোতাম ক্লিক করলে মেসেজ ডিলিট করবে """
-    await callback.message.delete()
-    await callback.answer("✅ মেসেজ মুছে ফেলা হয়েছে!", show_alert=True)
+    try:
+        await bot.delete_message(callback.message.chat.id, callback.message.message_id)
+        await callback.answer("✅ Message deleted successfully!", show_alert=True)
+    except Exception as e:
+        logger.error(f"Error deleting message: {e}")
+        await callback.answer("❌ Failed to delete message!", show_alert=True)
 
+# -------------- Keep-Alive ওয়েব সার্ভার (aiohttp) --------------
+async def handle(request):
+    return web.Response(text="I'm alive!")
 
+async def start_webserver():
+    app = web.Application()
+    app.router.add_get('/', handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 8080)
+    await site.start()
+    logger.info("✅ Webserver is running on port 8080")
+
+# -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের পোলিং শুরু করা --------------
 async def main():
-    """ 🚀 বট চালানোর ফাংশন """
+    asyncio.create_task(start_webserver())
+    logger.info("✅ Bot is starting polling...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
