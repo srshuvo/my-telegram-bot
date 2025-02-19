@@ -26,8 +26,10 @@ def extract_modified_urls(text: str) -> list:
     unique_urls = set()
     modified_urls = []
     for url in urls:
-        if "tera" in url:  # শুধুমাত্র TERA BOX লিঙ্ক গুলি রাখুন
+        # "player.terabox.tech" ফাংশন বাদ দেয়া হয়েছে
+        if "tera" in url:
             modified_urls.append(url)
+            unique_urls.add(url)
     return modified_urls
 
 # নতুন লিঙ্ক তৈরি করার ফাংশন
@@ -86,7 +88,7 @@ async def pin_server_issue_message(chat_id: int):
 async def modify_link(message: Message):
     text = message.text or message.caption
     if not text:
-        return
+        return  # Ensure that the text is not empty.
 
     modified_urls = extract_modified_urls(text)
     if not modified_urls:
@@ -105,7 +107,7 @@ async def modify_link(message: Message):
     for i, url in enumerate(modified_urls):
         id = extract_id_from_url(url)
         new_link = create_new_link(id) if id else url
-        buttons.append([ 
+        buttons.append([
             InlineKeyboardButton(
                 text=f"🎬 Watch Video {i+1} - Click to Watch!",
                 url=new_link,
@@ -130,7 +132,10 @@ async def modify_link(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     # মেসেজ পাঠানো
-    sent_message = await message.reply(text, reply_markup=keyboard)
+    sent_message = await message.reply(
+        text if text else "Oops! No text to send.",  # Add fallback text
+        reply_markup=keyboard
+    )
 
 # Regenerate Handler
 @dp.callback_query(F.data == "regenerate_id")
