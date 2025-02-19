@@ -18,7 +18,7 @@ dp = Dispatcher()
 
 # ID বের করা ও নতুন লিঙ্ক তৈরি করার ফাংশন
 def extract_id_and_generate_link(url):
-    match = re.search(r"tera(\w+)", url)
+    match = re.search(r"/s/([a-zA-Z0-9]+)", url)  # "/s/" এর পরের ID খুঁজবে
     if match:
         extracted_id = match.group(1)
         new_link = f"https://mdiskplay.com/terabox/{extracted_id}"
@@ -38,7 +38,7 @@ def create_inline_buttons(link):
 # Start command
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    await message.answer("👋 Welcome! Send me a link containing 'tera' and I'll generate a new link for you.")
+    await message.answer("👋 Welcome! Send me a link and I'll generate a new link for you.")
 
 # মেসেজ হ্যান্ডলার (লিঙ্ক চেক ও রিপ্লাই পাঠানো)
 @dp.message()
@@ -48,9 +48,9 @@ async def link_handler(message: types.Message):
 
     if extracted_id:
         buttons = create_inline_buttons(new_link)
-        await message.answer(f"✅ **Here's your link:**\n🔗 {new_link}", reply_markup=buttons)
+        await message.answer(f"✅ **Here's your modified link:**\n🔗 {new_link}", reply_markup=buttons)
     else:
-        await message.answer("❌ No valid 'tera' link found!")
+        await message.answer("❌ No valid link found!")
 
 # ইনলাইন বোতামের কলব্যাক হ্যান্ডলার
 @dp.callback_query()
