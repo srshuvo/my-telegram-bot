@@ -38,12 +38,15 @@ def create_inline_buttons(link):
 # Start command
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    await message.answer("👋 Welcome! Send me a link and I'll generate a new link for you.")
+    await message.answer("👋 Welcome! Send me a link or a media with a link, and I'll generate a new link for you.")
 
-# মেসেজ হ্যান্ডলার (লিঙ্ক চেক ও রিপ্লাই পাঠানো)
+# মেসেজ হ্যান্ডলার (টেক্সট বা মিডিয়া লিংক চেক ও রিপ্লাই পাঠানো)
 @dp.message()
 async def link_handler(message: types.Message):
-    url = message.text.strip()
+    url = message.text if message.text else message.caption  # টেক্সট বা মিডিয়ার ক্যাপশন চেক করা
+    if not url:
+        return  # যদি কোনো লিংক না থাকে, তাহলে কিছু করবে না
+
     extracted_id, new_link = extract_id_and_generate_link(url)
 
     if extracted_id:
