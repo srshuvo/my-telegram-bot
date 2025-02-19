@@ -95,3 +95,17 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    import uvicorn
+from fastapi import FastAPI
+
+# ✅ FastAPI server setup (Webhook না থাকলেও HTTP সার্ভার চালাবে, Render-এর পোর্ট সমস্যা সমাধান করবে)
+app = FastAPI()
+
+@app.get("/")
+async def home():
+    return {"message": "Bot is running!"}
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))  # Render-এর জন্য পোর্ট সেট করুন
+    asyncio.create_task(main())  # Bot চালানো
+    uvicorn.run(app, host="0.0.0.0", port=port)  # HTTP সার্ভার চালানো
