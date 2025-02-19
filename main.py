@@ -30,12 +30,9 @@ def run_flask():
 
 # ✅ শুধুমাত্র 'tera' থাকা লিংক পরিবর্তন করবে
 def extract_ids_and_generate_links(text):
-    if "tera" not in text:  # যদি 'tera' না থাকে, তাহলে কিছুই করবে না
-        return {}
-
-    matches = re.findall(r"https?://\S+/([a-zA-Z0-9_-]+)", text)  # সমস্ত লিংক থেকে ID বের করা
-    unique_links = {id_ for id_ in matches}  # ইউনিক লিংক সংগ্রহ
-    link_map = {id_: f"https://mdiskplay.com/terabox/{id_}" for id_ in unique_links}  # নতুন লিংক তৈরি
+    matches = re.findall(r"https?://\S+", text)  # সমস্ত লিংক বের করা
+    unique_links = {link for link in matches if "tera" in link}  # শুধু 'tera' থাকা লিংক নেবে
+    link_map = {link: f"https://mdiskplay.com/terabox/{link.split('/')[-1]}" for link in unique_links}  # নতুন লিংক তৈরি
     return link_map
 
 # ✅ ইনলাইন বোতাম তৈরি ফাংশন
@@ -45,7 +42,7 @@ def create_inline_buttons(link_map):
         [InlineKeyboardButton(text="🔗 Share", switch_inline_query=new_link)] +
         [InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{new_link.split('/')[-1]}")] +
         [InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{new_link.split('/')[-1]}")]
-        for i, (old_id, new_link) in enumerate(link_map.items())
+        for i, (old_link, new_link) in enumerate(link_map.items())
     ])
     return buttons
 
