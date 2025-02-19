@@ -1,12 +1,9 @@
 import re
-import asyncio
 import os
 import logging
 import urllib.parse
-
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiohttp import web
 
 # -------------- Logging সেটআপ --------------
 logging.basicConfig(level=logging.INFO)
@@ -71,7 +68,6 @@ async def modify_link(message: Message):
 
     # টাইপিং ইফেক্ট দেখানোর জন্য
     await bot.send_chat_action(message.chat.id, action="typing")
-    await asyncio.sleep(1.5)
 
     # মূল লিঙ্কগুলি মুছে ফেলা
     for url in modified_urls:
