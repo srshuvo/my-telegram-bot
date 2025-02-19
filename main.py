@@ -76,10 +76,16 @@ async def callback_handler(call: CallbackQuery):
     elif call.data.startswith("regenerate"):
         old_link = call.data.split(":")[1]  # পুরাতন লিংক
         old_id = old_link.split("/")[-1]  # পুরাতন ID
-        new_id = old_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন ID তৈরি
+
+        # যদি ID এক অক্ষরের হয়, তাহলে পরিবর্তন না করে আগেরটাই থাকবে
+        if len(old_id) > 1:
+            new_id = old_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন ID তৈরি
+        else:
+            new_id = old_id  # ID ছোট হলে পরিবর্তন হবে না
+
         new_link = f"https://mdiskplay.com/terabox/{new_id}"  # নতুন লিংক
         
-        # আগের মেসেজ থেকে লিংক বের করা
+        # আগের মেসেজ থেকে সমস্ত লিংক বের করা
         original_text = call.message.text
         existing_links = re.findall(r"https://mdiskplay.com/terabox/\S+", original_text)
 
