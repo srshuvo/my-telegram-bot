@@ -5,11 +5,13 @@ import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.storage.memory import MemoryStorage
 
 TOKEN = os.getenv("BOT_TOKEN")  # Environment Variable থেকে টোকেন নেওয়া হচ্ছে
 
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot)
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
 
 logging.basicConfig(level=logging.INFO)
 
