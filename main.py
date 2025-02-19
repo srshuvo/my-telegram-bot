@@ -79,7 +79,7 @@ async def modify_link(message: Message):
     # প্রতিটি modified URL এর জন্য ইনলাইন বাটন তৈরি
     buttons = []
     for i, url in enumerate(modified_urls):
-        buttons.append([
+        buttons.append([ 
             InlineKeyboardButton(
                 text=f"🎬 Watch Video {i+1} - Click to Watch!",  
                 url=url,
@@ -117,7 +117,7 @@ async def regenerate_link(callback: CallbackQuery):
     await callback.message.edit_text(
         f"🔄 **Regenerated Link:**\n\n{new_url}",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
+            inline_keyboard=[ 
                 [InlineKeyboardButton(text="🎬 Watch Video - Click to Watch!", url=new_url)],
                 [InlineKeyboardButton(text="🔗 Share this Link Now!", switch_inline_query=new_url)]
             ]
@@ -139,20 +139,30 @@ async def delete_message(callback: CallbackQuery):
 async def handle(request):
     return web.Response(text="I'm alive!")
 
-async def start_webserver():
+# -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের ওয়েবহুক সেট করা --------------
+async def main():
     app = web.Application()
-    app.router.add_get('/', handle)
+    app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
     await site.start()
     logger.info("✅ Webserver is running on port 8080")
 
-# -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের পোলিং শুরু করা --------------
-async def main():
-    asyncio.create_task(start_webserver())
-    logger.info("✅ Bot is starting polling...")
-    await dp.start_polling(bot)
+    # Setting up webhook for Render
+    webhook_url = f"https://my-telegram-bot-w4az.onrender.com{BOT_TOKEN}"
+    await bot.set_webhook(webhook_url)
+    logger.info(f"✅ Webhook set to: {webhook_url}")
+
+    # Start handling webhook
+    await dp.start_webhook(
+        bot=bot,
+        path=f"/{BOT_TOKEN}",
+        on_startup=main,
+        skip_updates=True,
+        host="0.0.0.0",
+        port=8080
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())
