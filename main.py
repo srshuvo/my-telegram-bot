@@ -10,9 +10,14 @@ import logging
 load_dotenv()
 API_TOKEN = os.getenv("API_TOKEN")
 
-# Create bot and dispatcher
+# Create bot instance
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+
+# Create dispatcher instance (pass bot as argument)
+dp = Dispatcher()
+
+# Attach the bot to the dispatcher
+dp.bot = bot
 
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
@@ -88,7 +93,7 @@ async def main():
     asyncio.create_task(start_webserver())
     logger.info("✅ Bot is starting polling...")
     # Start bot polling
-    await dp.start_polling()
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     # Run everything inside asyncio loop
