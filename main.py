@@ -1,9 +1,14 @@
 import re
+import asyncio
 import os
 import logging
-import urllib.parse
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiohttp import web
+from dotenv import load_dotenv
+
+# -------------- .env ফাইল থেকে Environment Variables লোড করা --------------
+load_dotenv()
 
 # -------------- Logging সেটআপ --------------
 logging.basicConfig(level=logging.INFO)
@@ -25,7 +30,7 @@ def extract_modified_urls(text: str) -> list:
     modified_urls = []
     for url in urls:
         if "tera" in url:  # "tera" শব্দ থাকলে id বের করা
-            # URL থেকে ID বের করা
+            # URL থেকে ID বের করা, এখানে শুধু 'url' এর পরের অংশ থেকে ID ধরে রাখা
             id_match = re.search(r"(https?://[^\s]+)", url)
             if id_match:
                 id = id_match.group(1)  # URL থেকে ID সংগ্রহ করা
@@ -68,6 +73,7 @@ async def modify_link(message: Message):
 
     # টাইপিং ইফেক্ট দেখানোর জন্য
     await bot.send_chat_action(message.chat.id, action="typing")
+    await asyncio.sleep(1.5)
 
     # মূল লিঙ্কগুলি মুছে ফেলা
     for url in modified_urls:
@@ -76,17 +82,25 @@ async def modify_link(message: Message):
     # প্রতিটি modified URL এর জন্য ইনলাইন বাটন তৈরি
     buttons = []
     for i, url in enumerate(modified_urls):
-        # URL এনকোড করা হচ্ছে
-        safe_url = urllib.parse.quote(url, safe="")
-
-        buttons.append([
-            InlineKeyboardButton(text=f"🎬 Watch Video {i+1} - Click to Watch!", url=url),
-            InlineKeyboardButton(text="🔗 Share this Link Now!", switch_inline_query=url),
-            InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate_{safe_url}")
+        buttons.append([ 
+            InlineKeyboardButton(
+                text=f"🎬 Watch Video {i+1} - Click to Watch!",  
+                url=url,
+            ),
+            InlineKeyboardButton(
+                text="🔗 Share this Link Now!",  
+                switch_inline_query=url
+            ),
+            InlineKeyboardButton(
+                text="🔄 Regenerate",  
+                callback_data=f"regenerate_{url}"  # Regenerate বাটনের জন্য callback_data
+            )
         ])
-    
-    buttons.append([
-        InlineKeyboardButton(text="🗑️ Delete This Message", callback_data="delete_message")
+    buttons.append([ 
+        InlineKeyboardButton(
+            text="🗑️ Delete This Message", 
+            callback_data="delete_message"
+        )
     ])
 
     # কাস্টম স্টাইলিং সহ ইনলাইন কীবোর্ড তৈরি
@@ -98,8 +112,9 @@ async def modify_link(message: Message):
 # -------------- Regenerate Button Handler --------------
 @dp.callback_query(F.data.startswith("regenerate_"))
 async def regenerate_link(callback: CallbackQuery):
-    safe_url = callback.data.split("_", 1)[1]  # URL এর id এর অংশ আলাদা করা
-    new_url = urllib.parse.unquote(safe_url)  # URL পুনরায় ডিকোড করা
+    url = callback.data.split("_", 1)[1]  # URL এর id এর অংশ আলাদা করা
+    new_id = url[1:]  # প্রথম অক্ষর কেটে ফেলা
+    new_url = f"https://mdiskplay.com/terabox/{new_id}"  # নতুন লিঙ্ক তৈরি
 
     # Regenerated লিঙ্ক সহ নতুন মেসেজ পাঠানো
     await callback.message.edit_text(
@@ -143,4 +158,5 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    import asyncio  # এখানে asyncio ইম্পোর্ট করা হয়েছে
     asyncio.run(main())
