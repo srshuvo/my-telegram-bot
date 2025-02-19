@@ -1,76 +1,88 @@
 import os
 import re
 import asyncio
+import threading
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
+from flask import Flask
 
-# Environment variables লোড করা
+# ✅ Environment variables লোড করা
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Bot & Dispatcher সেটআপ (aiogram v3.7+ অনুযায়ী)
+# ✅ Bot & Dispatcher সেটআপ (aiogram v3.7+ অনুযায়ী)
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 
-# ID বের করা ও নতুন লিঙ্ক তৈরি করার ফাংশন
-def extract_id_and_generate_link(url):
-    match = re.search(r"/s/([a-zA-Z0-9]+)", url)  # "/s/" এর পরের ID খুঁজবে
-    if match:
-        extracted_id = match.group(1)
-        new_link = f"https://mdiskplay.com/terabox/{extracted_id}"
-        return extracted_id, new_link
-    return None, None
+# ✅ Flask Web Server তৈরি
+app = Flask(__name__)
 
-# ইনলাইন বোতাম তৈরি ফাংশন
-def create_inline_buttons(link):
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+# ✅ ID বের করা ও নতুন লিঙ্ক তৈরি করার ফাংশন (লিংকের শেষে `/` এর পর যা আছে সেটাই ID)
+def extract_ids_and_generate_links(text):
+    unique_links = set(re.findall(r"https?://\S+/([a-zA-Z0-9_-]+)", text))  # ইউনিক আইডি বের করা
+    link_map = {id_: f"https://mdiskplay.com/terabox/{id_}" for id_ in unique_links}  # নতুন লিংক তৈরি
+    return link_map
+
+# ✅ ইনলাইন বোতাম তৈরি ফাংশন
+def create_inline_buttons(link_map):
     buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎬 Watch Video", url=link)],
-        [InlineKeyboardButton(text="🔗 Share", switch_inline_query=link)],
-        [InlineKeyboardButton(text="🗑️ Delete", callback_data="delete"),
-         InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{link.split('/')[-1]}")]
+        [InlineKeyboardButton(text=f"🎬 Watch Video {i+1}", url=new_link)] +
+        [InlineKeyboardButton(text="🔗 Share", switch_inline_query=new_link)] +
+        [InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{new_link.split('/')[-1]}")] +
+        [InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{new_link.split('/')[-1]}")]
+        for i, (old_id, new_link) in enumerate(link_map.items())
     ])
     return buttons
 
-# Start command
+# ✅ Start command
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
     await message.answer("👋 Welcome! Send me a link or a media with a link, and I'll generate a new link for you.")
 
-# মেসেজ হ্যান্ডলার (টেক্সট বা মিডিয়া লিংক চেক ও রিপ্লাই পাঠানো)
+# ✅ মেসেজ হ্যান্ডলার (টেক্সট বা মিডিয়া ক্যাপশন চেক)
 @dp.message()
 async def link_handler(message: types.Message):
-    url = message.text if message.text else message.caption  # টেক্সট বা মিডিয়ার ক্যাপশন চেক করা
-    if not url:
-        return  # যদি কোনো লিংক না থাকে, তাহলে কিছু করবে না
+    text = message.text if message.text else message.caption  # টেক্সট বা ক্যাপশন চেক
+    if not text:
+        return  # লিংক না থাকলে কিছু করবে না
 
-    extracted_id, new_link = extract_id_and_generate_link(url)
+    link_map = extract_ids_and_generate_links(text)
 
-    if extracted_id:
-        buttons = create_inline_buttons(new_link)
-        await message.answer(f"✅ **Here's your modified link:**\n🔗 {new_link}", reply_markup=buttons)
+    if link_map:
+        buttons = create_inline_buttons(link_map)
+        modified_links = "\n".join([f"🔗 {new_link}" for new_link in link_map.values()])
+        await message.answer(f"✅ **Modified Links:**\n{modified_links}", reply_markup=buttons)
     else:
         await message.answer("❌ No valid link found!")
 
-# ইনলাইন বোতামের কলব্যাক হ্যান্ডলার
+# ✅ ইনলাইন বোতামের কলব্যাক হ্যান্ডলার
 @dp.callback_query()
 async def callback_handler(call: CallbackQuery):
-    if call.data == "delete":
+    if call.data.startswith("delete"):
         await call.message.delete()
     elif call.data.startswith("regenerate"):
         old_id = call.data.split(":")[1]
         new_id = old_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন ID তৈরি
         new_link = f"https://mdiskplay.com/terabox/{new_id}"
-        buttons = create_inline_buttons(new_link)
+        buttons = create_inline_buttons({new_id: new_link})
 
         await call.message.edit_text(f"♻️ **Regenerated Link:**\n🔗 {new_link}", reply_markup=buttons)
 
-# মেইন ফাংশন (aiogram v3 অনুযায়ী async loop সেটআপ)
+# ✅ মেইন ফাংশন (aiogram v3 অনুযায়ী async loop সেটআপ)
 async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    threading.Thread(target=run_flask).start()  # Flask Server চালু করা
+    asyncio.run(main())  # Telegram Bot চালু করা
