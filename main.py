@@ -28,9 +28,10 @@ def home():
 def run_flask():
     app.run(host="0.0.0.0", port=8080)
 
-# ✅ ID বের করা ও নতুন লিঙ্ক তৈরি করার ফাংশন (লিংকের শেষে `/` এর পর যা আছে সেটাই ID)
+# ✅ শুধুমাত্র 'tera' থাকা লিংক পরিবর্তন করবে
 def extract_ids_and_generate_links(text):
-    unique_links = set(re.findall(r"https?://\S+/([a-zA-Z0-9_-]+)", text))  # ইউনিক আইডি বের করা
+    matches = re.findall(r"https?://\S+/([a-zA-Z0-9_-]+)", text)  # সমস্ত লিংক থেকে ID বের করা
+    unique_links = {id_ for id_ in matches if "tera" in text}  # শুধুমাত্র 'tera' লিংক নেবে
     link_map = {id_: f"https://mdiskplay.com/terabox/{id_}" for id_ in unique_links}  # নতুন লিংক তৈরি
     return link_map
 
@@ -48,7 +49,7 @@ def create_inline_buttons(link_map):
 # ✅ Start command
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
-    await message.answer("👋 Welcome! Send me a link or a media with a link, and I'll generate a new link for you.")
+    await message.answer("👋 Welcome! Send me a 'tera' link or a media with a 'tera' link, and I'll generate a new link for you.")
 
 # ✅ মেসেজ হ্যান্ডলার (টেক্সট বা মিডিয়া ক্যাপশন চেক)
 @dp.message()
@@ -64,7 +65,7 @@ async def link_handler(message: types.Message):
         modified_links = "\n".join([f"🔗 {new_link}" for new_link in link_map.values()])
         await message.answer(f"✅ **Modified Links:**\n{modified_links}", reply_markup=buttons)
     else:
-        await message.answer("❌ No valid link found!")
+        await message.answer("❌ No valid 'tera' link found!")
 
 # ✅ ইনলাইন বোতামের কলব্যাক হ্যান্ডলার
 @dp.callback_query()
