@@ -1,103 +1,65 @@
-import asyncio
 import os
-from dotenv import load_dotenv
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiohttp import web
-import logging
 import re
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils import executor
+from dotenv import load_dotenv
 
-# Environment variables
+# Environment variables লোড করা
 load_dotenv()
-API_TOKEN = os.getenv("API_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Create bot instance
-bot = Bot(token=API_TOKEN)
+# Bot & Dispatcher সেটআপ
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
 
-# Create dispatcher instance
-dp = Dispatcher()
-
-# Attach the bot to the dispatcher
-dp.bot = bot
-
-# Initialize logger
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# -------------- Keep-Alive ওয়েব সার্ভার (aiohttp) --------------
-async def handle(request):
-    return web.Response(text="I'm alive!")
-
-async def start_webserver():
-    app = web.Application()
-    app.router.add_get('/', handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8080)
-    await site.start()
-    logger.info("✅ Webserver is running on port 8080")
-
-# Link and ID extraction function
-def extract_id(url):
-    match = re.search(r"tera(\d+)", url)
+# ID বের করা ও নতুন লিঙ্ক তৈরি করার ফাংশন
+def extract_id_and_generate_link(url):
+    match = re.search(r"tera(\w+)", url)
     if match:
-        return match.group(1)
-    return None
-
-# Regenerate function
-def regenerate_id(old_id):
-    return old_id[1:]
-
-# Command to start the bot
-async def send_welcome(message: types.Message):
-    await message.reply("Send a link containing 'tera' to get started!")
-
-# Function to handle incoming links
-async def handle_tera_link(message: types.Message):
-    extracted_id = extract_id(message.text)
-    if extracted_id:
+        extracted_id = match.group(1)
         new_link = f"https://mdiskplay.com/terabox/{extracted_id}"
-        keyboard = InlineKeyboardMarkup(row_width=2)
-        keyboard.add(
-            InlineKeyboardButton(text="🎬 Watch Video", url=new_link),
-            InlineKeyboardButton(text="🔗 Share", switch_inline_query="Share"),
-            InlineKeyboardButton(text="🗑️ Delete", callback_data="delete"),
-            InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{extracted_id}")
-        )
-        await message.answer("🎬 Watch Video → " + new_link, reply_markup=keyboard)
+        return extracted_id, new_link
+    return None, None
 
-# Handle callback for regeneration
-async def regenerate_link(callback_query: types.CallbackQuery):
-    old_id = callback_query.data.split(":")[1]
-    new_id = regenerate_id(old_id)
-    new_link = f"https://mdiskplay.com/terabox/{new_id}"
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton(text="🎬 Watch Video", url=new_link),
-        InlineKeyboardButton(text="🔗 Share", switch_inline_query="Share"),
-        InlineKeyboardButton(text="🗑️ Delete", callback_data="delete"),
-        InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{new_id}")
+# ইনলাইন বোতাম তৈরি ফাংশন
+def create_inline_buttons(link):
+    buttons = InlineKeyboardMarkup(row_width=2)
+    buttons.add(
+        InlineKeyboardButton("🎬 Watch Video", url=link),
+        InlineKeyboardButton("🔗 Share", switch_inline_query=link)
     )
-    await bot.edit_message_text(
-        f"🎬 Watch Video → {new_link}",
-        chat_id=callback_query.message.chat.id,
-        message_id=callback_query.message.message_id,
-        reply_markup=keyboard
+    buttons.add(
+        InlineKeyboardButton("🗑️ Delete", callback_data="delete"),
+        InlineKeyboardButton("🔄 Regenerate", callback_data=f"regenerate:{link.split('/')[-1]}")
     )
+    return buttons
 
-# -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের পোলিং শুরু করা --------------
-async def main():
-    # Register handlers
-    dp.message.register(send_welcome, commands=['start'])
-    dp.message.register(handle_tera_link, lambda message: 'tera' in message.text)
-    dp.callback_query.register(regenerate_link, lambda c: c.data.startswith('regenerate:'))
+# মেসেজ হ্যান্ডলার (লিঙ্ক চেক ও রিপ্লাই পাঠানো)
+@dp.message_handler(content_types=types.ContentTypes.TEXT)
+async def link_handler(message: types.Message):
+    url = message.text.strip()
+    extracted_id, new_link = extract_id_and_generate_link(url)
 
-    # Start the webserver in a separate task
-    asyncio.create_task(start_webserver())
-    logger.info("✅ Bot is starting polling...")
-    # Start bot polling
-    await dp.start_polling()
+    if extracted_id:
+        buttons = create_inline_buttons(new_link)
+        await message.reply(f"✅ **Here's your link:**\n🔗 {new_link}", reply_markup=buttons, parse_mode="Markdown")
+    else:
+        await message.reply("❌ No valid 'tera' link found!")
 
+# ইনলাইন বোতামের কলব্যাক হ্যান্ডলার
+@dp.callback_query_handler(lambda c: c.data.startswith("regenerate") or c.data == "delete")
+async def callback_handler(call: types.CallbackQuery):
+    if call.data == "delete":
+        await call.message.delete()
+    elif call.data.startswith("regenerate"):
+        old_id = call.data.split(":")[1]
+        new_id = old_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন ID তৈরি
+        new_link = f"https://mdiskplay.com/terabox/{new_id}"
+        buttons = create_inline_buttons(new_link)
+
+        await call.message.edit_text(f"♻️ **Regenerated Link:**\n🔗 {new_link}", reply_markup=buttons, parse_mode="Markdown")
+
+# বট চালানো
 if __name__ == "__main__":
-    # Run everything inside asyncio loop
-    asyncio.run(main())
+    executor.start_polling(dp, skip_updates=True)
