@@ -2,18 +2,18 @@ import os
 import re
 import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
-from aiogram.types import CallbackQuery
+from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
 
 # Environment variables লোড করা
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Bot & Dispatcher সেটআপ
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
+# Bot & Dispatcher সেটআপ (aiogram v3.7+ অনুযায়ী)
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 
 # ID বের করা ও নতুন লিঙ্ক তৈরি করার ফাংশন
@@ -35,11 +35,12 @@ def create_inline_buttons(link):
     ])
     return buttons
 
-# মেসেজ হ্যান্ডলার (লিঙ্ক চেক ও রিপ্লাই পাঠানো)
+# Start command
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
     await message.answer("👋 Welcome! Send me a link containing 'tera' and I'll generate a new link for you.")
 
+# মেসেজ হ্যান্ডলার (লিঙ্ক চেক ও রিপ্লাই পাঠানো)
 @dp.message()
 async def link_handler(message: types.Message):
     url = message.text.strip()
