@@ -55,7 +55,7 @@ async def start_handler(message: types.Message):
 async def link_handler(message: types.Message):
     text = message.text if message.text else message.caption  # টেক্সট বা ক্যাপশন চেক
     if not text:
-        return  # লিংক না থাকলে কিছু করবে না
+        return  # যদি টেক্সট বা ক্যাপশন না থাকে, কিছু করবে না
 
     link_map = extract_ids_and_generate_links(text)
 
