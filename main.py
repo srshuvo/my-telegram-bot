@@ -41,7 +41,7 @@ def create_inline_buttons(link_map):
         [InlineKeyboardButton(text=f"🎬 Watch Video {i+1}", url=new_link)] +
         [InlineKeyboardButton(text="🔗 Share", switch_inline_query=new_link)] +
         [InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{new_link.split('/')[-1]}")] +
-        [InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{new_link.split('/')[-1]}")]
+        [InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{old_link}")]
         for i, (old_link, new_link) in enumerate(link_map.items())
     ])
     return buttons
@@ -67,18 +67,31 @@ async def link_handler(message: types.Message):
     else:
         await message.answer("❌ No valid 'tera' link found!")
 
-# ✅ ইনলাইন বোতামের কলব্যাক হ্যান্ডলার
+# ✅ ইনলাইন বোতামের কলব্যাক হ্যান্ডলার (Regenerate ঠিক করা হয়েছে)
 @dp.callback_query()
 async def callback_handler(call: CallbackQuery):
     if call.data.startswith("delete"):
         await call.message.delete()
-    elif call.data.startswith("regenerate"):
-        old_id = call.data.split(":")[1]
-        new_id = old_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন ID তৈরি
-        new_link = f"https://mdiskplay.com/terabox/{new_id}"
-        buttons = create_inline_buttons({new_id: new_link})
 
-        await call.message.edit_text(f"♻️ **Regenerated Link:**\n🔗 {new_link}", reply_markup=buttons)
+    elif call.data.startswith("regenerate"):
+        old_link = call.data.split(":")[1]  # পুরাতন লিংক
+        old_id = old_link.split("/")[-1]  # পুরাতন ID
+        new_id = old_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন ID তৈরি
+        new_link = f"https://mdiskplay.com/terabox/{new_id}"  # নতুন লিংক
+        
+        # আগের মেসেজ থেকে লিংক বের করা
+        original_text = call.message.text
+        existing_links = re.findall(r"https://mdiskplay.com/terabox/\S+", original_text)
+
+        # পুরাতন লিংক আপডেট করে নতুন লিংক বসানো
+        updated_links = [new_link if link == old_link else link for link in existing_links]
+        updated_text = "✅ **Modified Links:**\n" + "\n".join([f"🔗 {link}" for link in updated_links])
+
+        # নতুন বোতাম সেটআপ
+        new_link_map = {link: link for link in updated_links}
+        buttons = create_inline_buttons(new_link_map)
+
+        await call.message.edit_text(updated_text, reply_markup=buttons)
 
 # ✅ মেইন ফাংশন (aiogram v3 অনুযায়ী async loop সেটআপ)
 async def main():
