@@ -1,7 +1,9 @@
-import os
-import asyncio
-import logging
 import re
+import asyncio
+import os
+import logging
+import urllib.parse
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiohttp import web
@@ -11,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # -------------- Environment Variable থেকে BOT_TOKEN নেওয়া --------------
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # Render থেকে BOT_TOKEN environment variable এ থেকে টোকেন নেয়া
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN environment variable is not set!")
 
@@ -26,7 +28,7 @@ def extract_modified_urls(text: str) -> list:
     modified_urls = []
     for url in urls:
         if "tera" in url:  # "tera" শব্দ থাকলে id বের করা
-            # URL থেকে ID বের করা, এখানে শুধু 'url' এর পরের অংশ থেকে ID ধরে রাখা
+            # URL থেকে ID বের করা
             id_match = re.search(r"(https?://[^\s]+)", url)
             if id_match:
                 id = id_match.group(1)  # URL থেকে ID সংগ্রহ করা
@@ -78,25 +80,17 @@ async def modify_link(message: Message):
     # প্রতিটি modified URL এর জন্য ইনলাইন বাটন তৈরি
     buttons = []
     for i, url in enumerate(modified_urls):
-        buttons.append([ 
-            InlineKeyboardButton(
-                text=f"🎬 Watch Video {i+1} - Click to Watch!",  
-                url=url,
-            ),
-            InlineKeyboardButton(
-                text="🔗 Share this Link Now!",  
-                switch_inline_query=url
-            ),
-            InlineKeyboardButton(
-                text="🔄 Regenerate",  
-                callback_data=f"regenerate_{url}"  # Regenerate বাটনের জন্য callback_data
-            )
+        # URL এনকোড করা হচ্ছে
+        safe_url = urllib.parse.quote(url, safe="")
+
+        buttons.append([
+            InlineKeyboardButton(text=f"🎬 Watch Video {i+1} - Click to Watch!", url=url),
+            InlineKeyboardButton(text="🔗 Share this Link Now!", switch_inline_query=url),
+            InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate_{safe_url}")
         ])
-    buttons.append([ 
-        InlineKeyboardButton(
-            text="🗑️ Delete This Message", 
-            callback_data="delete_message"
-        )
+    
+    buttons.append([
+        InlineKeyboardButton(text="🗑️ Delete This Message", callback_data="delete_message")
     ])
 
     # কাস্টম স্টাইলিং সহ ইনলাইন কীবোর্ড তৈরি
@@ -108,15 +102,14 @@ async def modify_link(message: Message):
 # -------------- Regenerate Button Handler --------------
 @dp.callback_query(F.data.startswith("regenerate_"))
 async def regenerate_link(callback: CallbackQuery):
-    url = callback.data.split("_", 1)[1]  # URL এর id এর অংশ আলাদা করা
-    new_id = url[1:]  # প্রথম অক্ষর কেটে ফেলা
-    new_url = f"https://mdiskplay.com/terabox/{new_id}"  # নতুন লিঙ্ক তৈরি
+    safe_url = callback.data.split("_", 1)[1]  # URL এর id এর অংশ আলাদা করা
+    new_url = urllib.parse.unquote(safe_url)  # URL পুনরায় ডিকোড করা
 
     # Regenerated লিঙ্ক সহ নতুন মেসেজ পাঠানো
     await callback.message.edit_text(
         f"🔄 **Regenerated Link:**\n\n{new_url}",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[ 
+            inline_keyboard=[
                 [InlineKeyboardButton(text="🎬 Watch Video - Click to Watch!", url=new_url)],
                 [InlineKeyboardButton(text="🔗 Share this Link Now!", switch_inline_query=new_url)]
             ]
@@ -141,7 +134,6 @@ async def handle(request):
 async def start_webserver():
     app = web.Application()
     app.router.add_get('/', handle)
-    app.router.add_post(f'/{BOT_TOKEN}', handle)  # Webhook URL হবে এই রকম
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
