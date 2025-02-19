@@ -7,23 +7,26 @@ from aiogram.filters import Command
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+import uvicorn
 
-# Environment variables লোড করা
+# ✅ Environment variables লোড করা
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Webhook URL
 
-# Bot & Dispatcher সেটআপ (aiogram v3.7+ অনুযায়ী)
+# ✅ Bot & Dispatcher সেটআপ (aiogram v3)
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 
-# ✅ শুধু 'tera' লেখা থাকা লিংক ফিল্টার করে ID বের করবে এবং নতুন লিংক তৈরি করবে
+# ✅ 'tera' থাকা লিংক থেকে ID বের করে নতুন লিংক তৈরি করা
 def extract_ids_and_generate_links(text):
     matches = re.findall(r"https?://\S*/(\S*tera\S*)", text)  # শুধু 'tera' থাকা লিংক নেবে
     unique_links = set(matches)  # ইউনিক আইডি বের করা
     link_map = {id_: f"https://mdiskplay.com/terabox/{id_}" for id_ in unique_links}  # নতুন লিংক তৈরি
     return link_map
 
-# ✅ ইনলাইন বোতাম তৈরি ফাংশন
+# ✅ ইনলাইন বোতাম তৈরি করার ফাংশন
 def create_inline_buttons(link_map):
     buttons = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -36,7 +39,7 @@ def create_inline_buttons(link_map):
     ])
     return buttons
 
-# ✅ Start command
+# ✅ /start কমান্ড হ্যান্ডলার
 @dp.message(Command("start"))
 async def start_handler(message: types.Message):
     await message.answer("👋 Welcome! Send me a link or a media with a link, and I'll generate a new link for you.")
@@ -57,7 +60,7 @@ async def link_handler(message: types.Message):
     else:
         await message.answer("❌ No valid 'tera' link found!")
 
-# ✅ ইনলাইন বোতামের কলব্যাক হ্যান্ডলার (Regenerate ঠিক করা হয়েছে)
+# ✅ ইনলাইন বোতামের কলব্যাক হ্যান্ডলার (Delete & Regenerate)
 @dp.callback_query()
 async def callback_handler(call: CallbackQuery):
     if call.data.startswith("delete"):
@@ -89,23 +92,32 @@ async def callback_handler(call: CallbackQuery):
 
         await call.message.edit_text(updated_text, reply_markup=buttons)
 
-# ✅ মেইন ফাংশন (aiogram v3 অনুযায়ী async loop সেটআপ)
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-    import uvicorn
-from fastapi import FastAPI
-
-# ✅ FastAPI server setup (Webhook না থাকলেও HTTP সার্ভার চালাবে, Render-এর পোর্ট সমস্যা সমাধান করবে)
+# ✅ FastAPI server setup
 app = FastAPI()
 
 @app.get("/")
 async def home():
-    return {"message": "Bot is running!"}
+    return {"message": "Bot is running on Webhook!"}
+
+# ✅ Webhook সেটআপ
+async def on_startup():
+    # Webhook URL-এ Telegram API থেকে updates গ্রহণ
+    await bot.set_webhook(WEBHOOK_URL)
+
+# ✅ FastAPI রাউটার থেকে Webhook কল হবে
+@app.post(f"/{BOT_TOKEN}")
+async def webhook(request: Request):
+    # Telegram-এর webhook request গ্রহণ ও Dispatcher চালানো
+    json_str = await request.json()
+    update = types.Update(**json_str)
+    await dp.process_update(update)
+    return {"status": "ok"}
+
+# ✅ মেইন ফাংশন (aiogram bot চালানো)
+async def main():
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))  # Render-এর জন্য পোর্ট সেট করুন
     asyncio.create_task(main())  # Bot চালানো
-    uvicorn.run(app, host="0.0.0.0", port=port)  # HTTP সার্ভার চালানো
+    uvicorn.run(app, host="0.0.0.0", port=port)  # Webhook সার্ভার চালানো
