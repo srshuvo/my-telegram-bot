@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiohttp import web
 import logging
+import re
 
 # Environment variables
 load_dotenv()
@@ -13,7 +14,7 @@ API_TOKEN = os.getenv("API_TOKEN")
 # Create bot instance
 bot = Bot(token=API_TOKEN)
 
-# Create dispatcher instance (pass bot as argument)
+# Create dispatcher instance
 dp = Dispatcher()
 
 # Attach the bot to the dispatcher
@@ -48,12 +49,10 @@ def regenerate_id(old_id):
     return old_id[1:]
 
 # Command to start the bot
-@dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
     await message.reply("Send a link containing 'tera' to get started!")
 
 # Function to handle incoming links
-@dp.message_handler(lambda message: 'tera' in message.text)
 async def handle_tera_link(message: types.Message):
     extracted_id = extract_id(message.text)
     if extracted_id:
@@ -68,7 +67,6 @@ async def handle_tera_link(message: types.Message):
         await message.answer("🎬 Watch Video → " + new_link, reply_markup=keyboard)
 
 # Handle callback for regeneration
-@dp.callback_query_handler(lambda c: c.data.startswith('regenerate:'))
 async def regenerate_link(callback_query: types.CallbackQuery):
     old_id = callback_query.data.split(":")[1]
     new_id = regenerate_id(old_id)
@@ -89,11 +87,16 @@ async def regenerate_link(callback_query: types.CallbackQuery):
 
 # -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের পোলিং শুরু করা --------------
 async def main():
+    # Register handlers
+    dp.message.register(send_welcome, commands=['start'])
+    dp.message.register(handle_tera_link, lambda message: 'tera' in message.text)
+    dp.callback_query.register(regenerate_link, lambda c: c.data.startswith('regenerate:'))
+
     # Start the webserver in a separate task
     asyncio.create_task(start_webserver())
     logger.info("✅ Bot is starting polling...")
     # Start bot polling
-    await dp.start_polling(bot)
+    await dp.start_polling()
 
 if __name__ == "__main__":
     # Run everything inside asyncio loop
