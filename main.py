@@ -26,11 +26,8 @@ def extract_modified_urls(text: str) -> list:
     unique_urls = set()
     modified_urls = []
     for url in urls:
-        if "tera" in url and not url.startswith("https://player.terabox.tech/?url="):
-            modified_url = f"https://player.terabox.tech/?url={url}"
-            if modified_url not in unique_urls:
-                unique_urls.add(modified_url)
-                modified_urls.append(modified_url)
+        if "tera" in url:  # শুধুমাত্র TERA BOX লিঙ্ক গুলি রাখুন
+            modified_urls.append(url)
     return modified_urls
 
 # নতুন লিঙ্ক তৈরি করার ফাংশন
@@ -46,7 +43,7 @@ def extract_id_from_url(url: str) -> str:
 
 # Regenerate ফাংশন
 def regenerate_id(id: str) -> str:
-    return id[1:]  # প্রথম অক্ষর বাদ দিয়ে নতুন ID তৈরি
+    return id[1:]  # প্রথম অক্ষর বাদ দিয়ে নতুন ID তৈরি
 
 # -------------- /start কমান্ড হ্যান্ডলার --------------
 @dp.message(F.text == "/start")
@@ -108,7 +105,7 @@ async def modify_link(message: Message):
     for i, url in enumerate(modified_urls):
         id = extract_id_from_url(url)
         new_link = create_new_link(id) if id else url
-        buttons.append([
+        buttons.append([ 
             InlineKeyboardButton(
                 text=f"🎬 Watch Video {i+1} - Click to Watch!",
                 url=new_link,
