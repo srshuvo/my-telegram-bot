@@ -26,11 +26,16 @@ def extract_modified_urls(text: str) -> list:
     unique_urls = set()
     modified_urls = []
     for url in urls:
-        if "tera" in url and not url.startswith("https://player.terabox.tech/?url="):
-            modified_url = f"https://player.terabox.tech/?url={url}"
-            if modified_url not in unique_urls:
-                unique_urls.add(modified_url)
-                modified_urls.append(modified_url)
+        if "tera" in url:  # "tera" শব্দ থাকলে id বের করা
+            # URL থেকে ID বের করা, এখানে শুধু 'url' এর পরের অংশ থেকে ID ধরে রাখা
+            id_match = re.search(r"(https?://[^\s]+)", url)
+            if id_match:
+                id = id_match.group(1)  # URL থেকে ID সংগ্রহ করা
+                # নতুন লিঙ্ক তৈরি
+                modified_url = f"https://mdiskplay.com/terabox/{id}"
+                if modified_url not in unique_urls:
+                    unique_urls.add(modified_url)
+                    modified_urls.append(modified_url)
     return modified_urls
 
 # -------------- /start কমান্ড হ্যান্ডলার --------------
@@ -49,25 +54,8 @@ async def welcome_message(message: Message):
     )
     try:
         await message.reply(welcome_text)
-        # পিন করা বার্তা শুধুমাত্র /start কমান্ডে পিন হবে
-        await pin_server_issue_message(message.chat.id)
     except Exception as e:
         logger.error(f"Error sending welcome message: {e}")
-
-# -------------- পিন করা নোটিফিকেশন মেসেজ --------------
-async def pin_server_issue_message(chat_id: int):
-    message_text = (
-        "⚠️ **সার্ভার সমস্যার কারণে বট এর লিঙ্ক পাঠাতে দেরি হতে পারে** ⚠️\n"
-        "📌 **লিঙ্ক পাঠাতে থাকুন, সার্ভার ঠিক হলে সব ভিডিও পাঠানো হবে।**\n\n"
-        "⚠️ **Due to server issues, the bot may take time to send links.** ⚠️\n"
-        "📌 **Keep sending links, and once the server is fixed, all videos will be sent.**"
-    )
-
-    try:
-        sent_message = await bot.send_message(chat_id, message_text, parse_mode="Markdown")
-        await sent_message.pin()  # শুধুমাত্র /start কমান্ডে পিন হবে
-    except Exception as e:
-        logger.error(f"Error pinning message: {e}")
 
 # -------------- মেসেজ হ্যান্ডলার: TERA BOX লিঙ্ক modify করা --------------
 @dp.message()
@@ -93,17 +81,21 @@ async def modify_link(message: Message):
     for i, url in enumerate(modified_urls):
         buttons.append([
             InlineKeyboardButton(
-                text=f"🎬 Watch Video {i+1} - Click to Watch!",  # কাস্টম বাটন টেক্সট (আরও আকর্ষণীয়)
+                text=f"🎬 Watch Video {i+1} - Click to Watch!",  
                 url=url,
             ),
             InlineKeyboardButton(
-                text="🔗 Share this Link Now!",  # শেয়ার লিঙ্ক বাটন টেক্সট (আরও স্পষ্ট)
+                text="🔗 Share this Link Now!",  
                 switch_inline_query=url
+            ),
+            InlineKeyboardButton(
+                text="🔄 Regenerate",  
+                callback_data=f"regenerate_{url}"  # Regenerate বাটনের জন্য callback_data
             )
         ])
-    buttons.append([
+    buttons.append([ 
         InlineKeyboardButton(
-            text="🗑️ Delete This Message",  # কাস্টম ডিলিট বাটন টেক্সট
+            text="🗑️ Delete This Message", 
             callback_data="delete_message"
         )
     ])
@@ -112,19 +104,26 @@ async def modify_link(message: Message):
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
     # শুধুমাত্র বাটন সহ মেসেজ পাঠানো
-    sent_message = None
-    if message.text:
-        sent_message = await message.reply(text, reply_markup=keyboard)
-    elif message.photo:
-        sent_message = await message.reply_photo(photo=message.photo[-1].file_id, caption=text, reply_markup=keyboard)
-    elif message.video:
-        sent_message = await message.reply_video(video=message.video.file_id, caption=text, reply_markup=keyboard)
-    elif message.document:
-        sent_message = await message.reply_document(document=message.document.file_id, caption=text, reply_markup=keyboard)
-    elif message.audio:
-        sent_message = await message.reply_audio(audio=message.audio.file_id, caption=text, reply_markup=keyboard)
-    elif message.voice:
-        sent_message = await message.reply_voice(voice=message.voice.file_id, caption=text, reply_markup=keyboard)
+    sent_message = await message.reply(text, reply_markup=keyboard)
+
+# -------------- Regenerate Button Handler --------------
+@dp.callback_query(F.data.startswith("regenerate_"))
+async def regenerate_link(callback: CallbackQuery):
+    url = callback.data.split("_", 1)[1]  # URL এর id এর অংশ আলাদা করা
+    new_id = url[1:]  # প্রথম অক্ষর কেটে ফেলা
+    new_url = f"https://mdiskplay.com/terabox/{new_id}"  # নতুন লিঙ্ক তৈরি
+
+    # Regenerated লিঙ্ক সহ নতুন মেসেজ পাঠানো
+    await callback.message.edit_text(
+        f"🔄 **Regenerated Link:**\n\n{new_url}",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🎬 Watch Video - Click to Watch!", url=new_url)],
+                [InlineKeyboardButton(text="🔗 Share this Link Now!", switch_inline_query=new_url)]
+            ]
+        )
+    )
+    await callback.answer()  # Callback Answer
 
 # -------------- Delete Button Handler --------------
 @dp.callback_query(F.data == "delete_message")
@@ -149,7 +148,7 @@ async def start_webserver():
     await site.start()
     logger.info("✅ Webserver is running on port 8080")
 
-# -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের পোলিং শুরু করা --------------
+# -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের পোলিং শুরু করা --------------
 async def main():
     asyncio.create_task(start_webserver())
     logger.info("✅ Bot is starting polling...")
