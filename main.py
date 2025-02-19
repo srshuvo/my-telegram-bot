@@ -30,8 +30,11 @@ def run_flask():
 
 # ✅ শুধুমাত্র 'tera' থাকা লিংক পরিবর্তন করবে
 def extract_ids_and_generate_links(text):
+    if "tera" not in text:  # যদি 'tera' না থাকে, তাহলে কিছুই করবে না
+        return {}
+
     matches = re.findall(r"https?://\S+/([a-zA-Z0-9_-]+)", text)  # সমস্ত লিংক থেকে ID বের করা
-    unique_links = {id_ for id_ in matches if "tera" in text}  # শুধুমাত্র 'tera' লিংক নেবে
+    unique_links = {id_ for id_ in matches}  # ইউনিক লিংক সংগ্রহ
     link_map = {id_: f"https://mdiskplay.com/terabox/{id_}" for id_ in unique_links}  # নতুন লিংক তৈরি
     return link_map
 
