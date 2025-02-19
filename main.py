@@ -1,8 +1,7 @@
-import re
-import asyncio
 import os
+import asyncio
 import logging
-
+import re
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiohttp import web
@@ -12,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # -------------- Environment Variable থেকে BOT_TOKEN নেওয়া --------------
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")  # Render থেকে BOT_TOKEN environment variable এ থেকে টোকেন নেয়া
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN environment variable is not set!")
 
@@ -117,7 +116,7 @@ async def regenerate_link(callback: CallbackQuery):
     await callback.message.edit_text(
         f"🔄 **Regenerated Link:**\n\n{new_url}",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
+            inline_keyboard=[ 
                 [InlineKeyboardButton(text="🎬 Watch Video - Click to Watch!", url=new_url)],
                 [InlineKeyboardButton(text="🔗 Share this Link Now!", switch_inline_query=new_url)]
             ]
@@ -137,13 +136,12 @@ async def delete_message(callback: CallbackQuery):
 
 # -------------- Keep-Alive ওয়েব সার্ভার (aiohttp) --------------
 async def handle(request):
-    data = await request.json()
-    logger.info(f"Webhook received: {data}")  # Logs the data received from Telegram
     return web.Response(text="I'm alive!")
 
 async def start_webserver():
     app = web.Application()
-    app.router.add_post(f'/{BOT_TOKEN}', handle)  # BOT_TOKEN দিয়ে webhook URL হ্যান্ডল করুন
+    app.router.add_get('/', handle)
+    app.router.add_post(f'/{BOT_TOKEN}', handle)  # Webhook URL হবে এই রকম
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", 8080)
@@ -152,18 +150,9 @@ async def start_webserver():
 
 # -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের পোলিং শুরু করা --------------
 async def main():
-    # Webserver শুরু করা
     asyncio.create_task(start_webserver())
     logger.info("✅ Bot is starting polling...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    # Webhook URL সেট করা
-    webhook_url = f"https://my-telegram-bot-w4az.onrender.com/{7503394230:AAGYMm3h5rGkPfGZ5Dech6pHGM8zFor96W0}"
-    try:
-        await bot.set_webhook(webhook_url)
-        logger.info(f"✅ Webhook set to: {webhook_url}")
-    except Exception as e:
-        logger.error(f"Error setting webhook: {e}")
-    
     asyncio.run(main())
