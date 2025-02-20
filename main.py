@@ -16,7 +16,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Webhook URL
 
 # ✅ Bot & Dispatcher সেটআপ (aiogram v3)
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN_V2))
 dp = Dispatcher()
 
 # ✅ 'tera' থাকা লিংক থেকে ID বের করে নতুন লিংক তৈরি করা
@@ -28,16 +28,17 @@ def extract_ids_and_generate_links(text):
 
 # ✅ ইনলাইন বোতাম তৈরি করার ফাংশন
 def create_inline_buttons(link_map):
-    buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=f"🎬 Watch Video {i+1}", url=new_link),
+    keyboard = []
+    for i, (old_id, new_link) in enumerate(link_map.items()):
+        keyboard.append([
+            InlineKeyboardButton(text=f"🎬 Watch {i+1}", url=new_link),
             InlineKeyboardButton(text="🔗 Share", switch_inline_query=new_link),
+        ])
+        keyboard.append([
             InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{new_link}"),
             InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{new_link}")
-        ]
-        for i, (old_id, new_link) in enumerate(link_map.items())
-    ])
-    return buttons
+        ])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 # ✅ /start কমান্ড হ্যান্ডলার
 @dp.message(Command("start"))
@@ -72,7 +73,7 @@ async def callback_handler(call: CallbackQuery):
 
         # যদি ID এক অক্ষরের হয়, তাহলে পরিবর্তন না করে আগেরটাই থাকবে
         if len(old_id) > 1:
-            new_id = old_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন ID তৈরি
+            new_id = old_id.lstrip("0")  # শুধু শূন্য বাদ দিয়ে নতুন ID তৈরি
         else:
             new_id = old_id  # ID ছোট হলে পরিবর্তন হবে না
 
@@ -100,14 +101,13 @@ async def home():
     return {"message": "Bot is running on Webhook!"}
 
 # ✅ Webhook সেটআপ
+@app.on_event("startup")
 async def on_startup():
-    # Webhook URL-এ Telegram API থেকে updates গ্রহণ
     await bot.set_webhook(WEBHOOK_URL)
 
 # ✅ FastAPI রাউটার থেকে Webhook কল হবে
 @app.post(f"/{BOT_TOKEN}")
 async def webhook(request: Request):
-    # Telegram-এর webhook request গ্রহণ ও Dispatcher চালানো
     json_str = await request.json()
     update = types.Update(**json_str)
     await dp.process_update(update)
@@ -117,4 +117,3 @@ async def webhook(request: Request):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))  # Render থেকে দেওয়া পোর্ট ব্যবহার
     uvicorn.run(app, host="0.0.0.0", port=port)  # Webhook সার্ভার চালানো
-    asyncio.run(main())  # Bot চালানো
