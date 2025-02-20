@@ -1,9 +1,10 @@
 import logging
 from aiogram import Bot, Dispatcher, types
-from aiogram.utils import executor
-import re
+from aiogram.types import ParseMode
+from aiogram import F
 from dotenv import load_dotenv
 import os
+import re
 
 # Load environment variables from .env file
 load_dotenv()
@@ -13,7 +14,7 @@ API_TOKEN = os.getenv('API_TOKEN')
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
 # Helper function to extract ID from Terabox link
 def extract_id(link):
@@ -23,12 +24,12 @@ def extract_id(link):
     return None
 
 # Handler for /start command
-@dp.message_handler(commands=['start'])
+@dp.message(Command("start"))
 async def send_welcome(message: types.Message):
-    await message.reply("Welcome! Send a Terabox link to extract ID and generate a new link.")
+    await message.answer("Welcome! Send a Terabox link to extract ID and generate a new link.")
 
 # Handler for text messages with Terabox link
-@dp.message_handler(regexp=r"https://www\.terabox\.com/s/[a-zA-Z0-9_]+")  # _ added to regex
+@dp.message(F.text)
 async def handle_terabox_link(message: types.Message):
     link = message.text
     extracted_id = extract_id(link)
@@ -43,22 +44,20 @@ async def handle_terabox_link(message: types.Message):
             types.InlineKeyboardButton("♻️ Regenerate", callback_data=f"regenerate_{extracted_id}"),
             types.InlineKeyboardButton("❌ Delete", callback_data="delete")
         )
-        await message.reply(f"✅ New link generated:\n🔗 {new_link}", reply_markup=markup)
+        await message.answer(f"✅ New link generated:\n🔗 {new_link}", reply_markup=markup)
     else:
-        await message.reply("❌ Invalid Terabox link. Please try again.")
+        await message.answer("❌ Invalid Terabox link. Please try again.")
 
 # Handler for inline button actions
-@dp.callback_query_handler(lambda c: c.data.startswith("regenerate_"))
+@dp.callback_query(F.data.startswith("regenerate_"))
 async def regenerate_id(callback_query: types.CallbackQuery):
     old_id = callback_query.data.split("_")[1]
     new_id = old_id[1:]  # Removing the first character to regenerate
     new_link = f"https://mdiskplay.com/terabox/{new_id}"
 
     # Update message with new link
-    await bot.edit_message_text(
+    await callback_query.message.edit_text(
         f"✅ New link generated:\n🔗 {new_link}",
-        callback_query.message.chat.id,
-        callback_query.message.message_id,
         reply_markup=types.InlineKeyboardMarkup().add(
             types.InlineKeyboardButton("▶️ Watch Video", url=new_link),
             types.InlineKeyboardButton("🔗 Share", url=new_link),
@@ -68,9 +67,9 @@ async def regenerate_id(callback_query: types.CallbackQuery):
     )
 
 # Handler for delete action
-@dp.callback_query_handler(lambda c: c.data == "delete")
+@dp.callback_query(F.data == "delete")
 async def delete_message(callback_query: types.CallbackQuery):
-    await bot.delete_message(callback_query.message.chat.id, callback_query.message.message_id)
+    await callback_query.message.delete()
 
 if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+    dp.run_polling(bot)
