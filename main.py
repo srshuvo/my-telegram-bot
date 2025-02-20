@@ -4,6 +4,7 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.filters import Command
 from aiohttp import web
 
 # -------------- Logging সেটআপ --------------
@@ -31,7 +32,7 @@ def generate_new_link_from_id(id: str) -> str:
     return f"https://mdiskplay.com/terabox/{id}"
 
 # -------------- /start কমান্ড হ্যান্ডলার --------------
-@dp.message(commands=["start"])
+@dp.message(Command("start"))
 async def welcome_message(message: Message):
     first_name = message.from_user.first_name or "বন্ধু"
     welcome_text = (
