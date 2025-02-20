@@ -1,59 +1,77 @@
 import logging
-import asyncio
 from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp import web
+from aiogram.types import ParseMode
+from aiogram.utils import executor
 import re
+from dotenv import load_dotenv
 import os
 
-TOKEN = "YOUR_BOT_TOKEN"
-WEBHOOK_PATH = f"/{TOKEN}"
-WEBHOOK_URL = f"https://your-render-app.onrender.com{WEBHOOK_PATH}"
+# Load environment variables from .env file
+load_dotenv()
 
-bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
-dp = Dispatcher()
+API_TOKEN = os.getenv('API_TOKEN')
 
-@dp.message()
-async def handle_message(message: types.Message):
-    if message.text:
-        match = re.search(r"tera(?:box)?[^"]*?([a-zA-Z0-9]+)", message.text)
-        if match:
-            file_id = match.group(1)
-            new_link = f"https://mdiskplay.com/terabox/{file_id}"
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="🎬 Watch Video", url=new_link)],
-                [InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regen_{file_id}")],
-                [InlineKeyboardButton(text="❌ Delete", callback_data="delete")]
-            ])
-            await message.answer(f"Here is your link: {new_link}", reply_markup=keyboard)
+logging.basicConfig(level=logging.INFO)
 
-@dp.callback_query()
-async def handle_callback(callback: types.CallbackQuery):
-    if callback.data.startswith("regen_"):
-        file_id = callback.data.split("_")[1][1:]
-        new_link = f"https://mdiskplay.com/terabox/{file_id}"
-        await callback.message.edit_text(f"Regenerated link: {new_link}", reply_markup=callback.message.reply_markup)
-    elif callback.data == "delete":
-        await callback.message.delete()
-    await callback.answer()
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
 
-async def on_startup():
-    await bot.set_webhook(WEBHOOK_URL)
-    logging.info("Webhook set successfully!")
+# Helper function to extract ID from Terabox link
+def extract_id(link):
+    match = re.search(r"terabox.com/s/([a-zA-Z0-9_]+)", link)  # _ added to regex
+    if match:
+        return match.group(1)
+    return None
 
-async def on_shutdown():
-    await bot.delete_webhook()
-    logging.info("Webhook deleted successfully!")
+# Handler for /start command
+@dp.message_handler(commands=['start'])
+async def send_welcome(message: types.Message):
+    await message.reply("Welcome! Send a Terabox link to extract ID and generate a new link.")
 
-app = web.Application()
-app.on_startup.append(lambda _: on_startup())
-app.on_shutdown.append(lambda _: on_shutdown())
+# Handler for text messages with Terabox link
+@dp.message_handler(regexp=r"https://www\.terabox\.com/s/[a-zA-Z0-9_]+")  # _ added to regex
+async def handle_terabox_link(message: types.Message):
+    link = message.text
+    extracted_id = extract_id(link)
+    if extracted_id:
+        new_link = f"https://mdiskplay.com/terabox/{extracted_id}"
+        
+        # Sending message with inline buttons
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("▶️ Watch Video", url=new_link),
+            types.InlineKeyboardButton("🔗 Share", url=new_link),
+            types.InlineKeyboardButton("♻️ Regenerate", callback_data=f"regenerate_{extracted_id}"),
+            types.InlineKeyboardButton("❌ Delete", callback_data="delete")
+        )
+        await message.reply(f"✅ New link generated:\n🔗 {new_link}", reply_markup=markup)
+    else:
+        await message.reply("❌ Invalid Terabox link. Please try again.")
 
-SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
-setup_application(app, dp, bot=bot)
+# Handler for inline button actions
+@dp.callback_query_handler(lambda c: c.data.startswith("regenerate_"))
+async def regenerate_id(callback_query: types.CallbackQuery):
+    old_id = callback_query.data.split("_")[1]
+    new_id = old_id[1:]  # Removing the first character to regenerate
+    new_link = f"https://mdiskplay.com/terabox/{new_id}"
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    # Update message with new link
+    await bot.edit_message_text(
+        f"✅ New link generated:\n🔗 {new_link}",
+        callback_query.message.chat.id,
+        callback_query.message.message_id,
+        reply_markup=types.InlineKeyboardMarkup().add(
+            types.InlineKeyboardButton("▶️ Watch Video", url=new_link),
+            types.InlineKeyboardButton("🔗 Share", url=new_link),
+            types.InlineKeyboardButton("♻️ Regenerate", callback_data=f"regenerate_{new_id}"),
+            types.InlineKeyboardButton("❌ Delete", callback_data="delete")
+        )
+    )
+
+# Handler for delete action
+@dp.callback_query_handler(lambda c: c.data == "delete")
+async def delete_message(callback_query: types.CallbackQuery):
+    await bot.delete_message(callback_query.message.chat.id, callback_query.message.message_id)
+
+if __name__ == '__main__':
+    executor.start_polling(dp, skip_updates=True)
