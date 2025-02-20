@@ -1,8 +1,8 @@
+import os
 import re
 import asyncio
-import os
 import logging
-from aiogram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiohttp import web
 
@@ -19,17 +19,19 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# -------------- TERA BOX লিঙ্ক থেকে আইডি বের করা --------------
-def extract_id_from_terabox_link(url: str) -> str:
-    match = re.search(r"/s/([a-zA-Z0-9_]+)", url)
-    return match.group(1) if match else None
+# -------------- TERA BOX লিঙ্ক থেকে আইডি এক্সট্রাকশন --------------
+def extract_id_from_terabox_link(text: str) -> str:
+    match = re.search(r"terabox.com/s/([a-zA-Z0-9_]+)", text)
+    if match:
+        return match.group(1)
+    return None
 
-# -------------- নতুন লিঙ্ক তৈরি করা --------------
+# -------------- নতুন লিঙ্ক তৈরি --------------
 def generate_new_link_from_id(id: str) -> str:
     return f"https://mdiskplay.com/terabox/{id}"
 
 # -------------- /start কমান্ড হ্যান্ডলার --------------
-@dp.message(F.text == "/start")
+@dp.message(commands=["start"])
 async def welcome_message(message: Message):
     first_name = message.from_user.first_name or "বন্ধু"
     welcome_text = (
@@ -47,54 +49,43 @@ async def welcome_message(message: Message):
     except Exception as e:
         logger.error(f"Error sending welcome message: {e}")
 
-# -------------- Regenerate অপশন --------------
+# -------------- TERA BOX লিঙ্ক modify করা --------------
 @dp.message()
-async def regenerate_link(message: Message):
+async def modify_link(message: Message):
     text = message.text or message.caption
     if not text:
         return
 
     # TERA BOX লিঙ্ক থেকে আইডি বের করা
-    extracted_id = None
-    for word in text.split():
-        if "tera" in word.lower():
-            extracted_id = extract_id_from_terabox_link(word)
-            if extracted_id:
-                break
-
+    extracted_id = extract_id_from_terabox_link(text)
     if not extracted_id:
         return
 
     # নতুন লিঙ্ক তৈরি করা
     new_link = generate_new_link_from_id(extracted_id)
 
-    # ইনলাইন বাটন সহ মেসেজ পাঠানো
+    # ইনলাইন বাটন সহ মেসেজ তৈরি করা
     buttons = [
-        [
-            InlineKeyboardButton(
-                text="🎬 Watch Video",  # ভিডিও দেখার জন্য বাটন
-                url=new_link
-            ),
-            InlineKeyboardButton(
-                text="🔗 Share this Link Now!",  # লিঙ্ক শেয়ার করার বাটন
-                switch_inline_query=new_link
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                text="♻️ Regenerate",  # রিজেনারেট বাটন
-                callback_data="regenerate_link"
-            ),
-            InlineKeyboardButton(
-                text="❌ Delete",  # মেসেজ ডিলিট করার বাটন
-                callback_data="delete_message"
-            )
-        ]
+        [InlineKeyboardButton(text="🎬 Watch Video", url=new_link)],
+        [InlineKeyboardButton(text="🔗 Share this Link Now!", switch_inline_query=new_link)],
+        [InlineKeyboardButton(text="♻️ Regenerate", callback_data=f"regenerate_{extracted_id}")],
+        [InlineKeyboardButton(text="❌ Delete", callback_data="delete_message")]
     ]
-
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-    await message.reply(text, reply_markup=keyboard)
+    # মেসেজ পাঠানো
+    await message.reply(text=f"Here is your TERA BOX link: {new_link}", reply_markup=keyboard)
+
+# -------------- Regenerate Button Handler --------------
+@dp.callback_query(lambda c: c.data and c.data.startswith("regenerate_"))
+async def regenerate_link(callback: CallbackQuery):
+    extracted_id = callback.data.split("_")[1]
+    new_id = extracted_id[1:]  # প্রথম অক্ষর/সংখ্যা বাদ দেয়া
+    new_link = generate_new_link_from_id(new_id)
+    
+    await callback.message.edit_text(f"Here is your regenerated link: {new_link}")
+    await callback.answer(f"✅ New ID generated: {new_id}", show_alert=True)
 
 # -------------- Delete Button Handler --------------
 @dp.callback_query(F.data == "delete_message")
@@ -105,56 +96,6 @@ async def delete_message(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Error deleting message: {e}")
         await callback.answer("❌ Failed to delete message!", show_alert=True)
-
-# -------------- Regenerate Link Button Handler --------------
-@dp.callback_query(F.data == "regenerate_link")
-async def regenerate_link_callback(callback: CallbackQuery):
-    original_message = callback.message
-    original_text = original_message.text
-
-    # TERA BOX লিঙ্ক থেকে আইডি বের করা
-    extracted_id = None
-    for word in original_text.split():
-        if "tera" in word.lower():
-            extracted_id = extract_id_from_terabox_link(word)
-            if extracted_id:
-                break
-
-    if not extracted_id:
-        await callback.answer("❌ Invalid link!", show_alert=True)
-        return
-
-    # নতুন লিঙ্ক তৈরি করা
-    new_link = generate_new_link_from_id(extracted_id)
-
-    # ইনলাইন বাটন সহ মেসেজ আপডেট করা
-    buttons = [
-        [
-            InlineKeyboardButton(
-                text="🎬 Watch Video",  # ভিডিও দেখার জন্য বাটন
-                url=new_link
-            ),
-            InlineKeyboardButton(
-                text="🔗 Share this Link Now!",  # শেয়ার বাটন
-                switch_inline_query=new_link
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                text="♻️ Regenerate",  # রিজেনারেট বাটন
-                callback_data="regenerate_link"
-            ),
-            InlineKeyboardButton(
-                text="❌ Delete",  # ডিলিট বাটন
-                callback_data="delete_message"
-            )
-        ]
-    ]
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-    # মেসেজ আপডেট করা
-    await callback.message.edit_text(original_text, reply_markup=keyboard)
-    await callback.answer("♻️ Link regenerated!", show_alert=True)
 
 # -------------- Keep-Alive ওয়েব সার্ভার (aiohttp) --------------
 async def handle(request):
