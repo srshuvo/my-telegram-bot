@@ -1,131 +1,59 @@
-from contextlib import asynccontextmanager
-import os
-import re
+import logging
 import asyncio
-from aiogram import Bot, Dispatcher, types, F, Router
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
+from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
-from dotenv import load_dotenv
-from fastapi import FastAPI, Request
-import uvicorn
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
+import re
+import os
 
-# ✅ Environment variables লোড করা
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Webhook URL
+TOKEN = "YOUR_BOT_TOKEN"
+WEBHOOK_PATH = f"/{TOKEN}"
+WEBHOOK_URL = f"https://your-render-app.onrender.com{WEBHOOK_PATH}"
 
-# ✅ Bot & Dispatcher সেটআপ (aiogram v3)
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN_V2))
+bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
-router = Router()  # ✅ রাউটার ব্যবহার করা হচ্ছে
 
-# ✅ 'tera' থাকা লিংক থেকে ID বের করে নতুন লিংক তৈরি করা
-def extract_ids_and_generate_links(text):
-    matches = re.findall(r"https?://\S*/(\S*tera\S*)", text)  # শুধু 'tera' থাকা লিংক নেবে
-    unique_links = set(matches)  # ইউনিক আইডি বের করা
-    link_map = {id_: f"https://mdiskplay.com/terabox/{id_}" for id_ in unique_links}  # নতুন লিংক তৈরি
-    return link_map
+@dp.message()
+async def handle_message(message: types.Message):
+    if message.text:
+        match = re.search(r"tera(?:box)?[^"]*?([a-zA-Z0-9]+)", message.text)
+        if match:
+            file_id = match.group(1)
+            new_link = f"https://mdiskplay.com/terabox/{file_id}"
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🎬 Watch Video", url=new_link)],
+                [InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regen_{file_id}")],
+                [InlineKeyboardButton(text="❌ Delete", callback_data="delete")]
+            ])
+            await message.answer(f"Here is your link: {new_link}", reply_markup=keyboard)
 
-# ✅ ইনলাইন বোতাম তৈরি করার ফাংশন
-def create_inline_buttons(link_map):
-    buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=f"🎬 Watch Video {i+1}", url=new_link),
-            InlineKeyboardButton(text="🔗 Share", switch_inline_query=new_link),
-            InlineKeyboardButton(text="🗑️ Delete", callback_data=f"delete:{new_link}"),
-            InlineKeyboardButton(text="🔄 Regenerate", callback_data=f"regenerate:{new_link}")
-        ]
-        for i, (old_id, new_link) in enumerate(link_map.items())
-    ])
-    return buttons
+@dp.callback_query()
+async def handle_callback(callback: types.CallbackQuery):
+    if callback.data.startswith("regen_"):
+        file_id = callback.data.split("_")[1][1:]
+        new_link = f"https://mdiskplay.com/terabox/{file_id}"
+        await callback.message.edit_text(f"Regenerated link: {new_link}", reply_markup=callback.message.reply_markup)
+    elif callback.data == "delete":
+        await callback.message.delete()
+    await callback.answer()
 
-# ✅ /start কমান্ড হ্যান্ডলার
-@router.message(F.text.startswith("/start"))
-async def start_handler(message: Message):
-    await message.answer("👋 Welcome! Send me a link or a media with a link, and I'll generate a new link for you.")
+async def on_startup():
+    await bot.set_webhook(WEBHOOK_URL)
+    logging.info("Webhook set successfully!")
 
-# ✅ লিংক চেকার (টেক্সট বা মিডিয়া ক্যাপশন চেক)
-@router.message(F.text | F.caption)
-async def link_handler(message: Message):
-    text = message.text if message.text else message.caption  # টেক্সট বা ক্যাপশন চেক
-    if not text:
-        return  
+async def on_shutdown():
+    await bot.delete_webhook()
+    logging.info("Webhook deleted successfully!")
 
-    link_map = extract_ids_and_generate_links(text)  # লিংক বের করে নতুন লিংক তৈরি করা
+app = web.Application()
+app.on_startup.append(lambda _: on_startup())
+app.on_shutdown.append(lambda _: on_shutdown())
 
-    if link_map:
-        buttons = create_inline_buttons(link_map)
-        modified_links = "\n".join([f"🔗 {new_link}" for new_link in link_map.values()])
-        await message.answer(f"✅ **Modified Links:**\n{modified_links}", reply_markup=buttons)
-    else:
-        await message.answer("❌ No valid 'tera' link found!")
+SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+setup_application(app, dp, bot=bot)
 
-# ✅ ইনলাইন বোতামের কলব্যাক হ্যান্ডলার (Delete & Regenerate)
-@router.callback_query()
-async def callback_handler(call: CallbackQuery):
-    if call.data.startswith("delete"):
-        await call.message.delete()
-
-    elif call.data.startswith("regenerate"):
-        old_link = call.data.split(":")[1]  # পুরাতন লিংক
-        old_id = old_link.split("/")[-1]  # পুরাতন ID
-
-        # যদি ID এক অক্ষরের হয়, তাহলে পরিবর্তন না করে আগেরটাই থাকবে
-        if len(old_id) > 1:
-            new_id = old_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন ID তৈরি
-        else:
-            new_id = old_id  # ID ছোট হলে পরিবর্তন হবে না
-
-        new_link = f"https://mdiskplay.com/terabox/{new_id}"  # নতুন লিংক
-        
-        # আগের মেসেজ থেকে সমস্ত লিংক বের করা
-        original_text = call.message.text
-        existing_links = re.findall(r"https://mdiskplay.com/terabox/\S+", original_text)
-
-        # পুরাতন লিংক আপডেট করে নতুন লিংক বসানো
-        updated_links = [new_link if link == old_link else link for link in existing_links]
-        updated_text = "✅ **Modified Links:**\n" + "\n".join([f"🔗 {link}" for link in updated_links])
-
-        # নতুন বোতাম সেটআপ
-        new_link_map = {link: link for link in updated_links}
-        buttons = create_inline_buttons(new_link_map)
-
-        await call.message.edit_text(updated_text, reply_markup=buttons)
-
-# ✅ Dispatcher-এ Router যোগ করা
-dp.include_router(router)
-
-# ✅ Lifespan Event Handler (Startup System)
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    if WEBHOOK_URL:  # Ensure WEBHOOK_URL is not None
-        try:
-            await bot.set_webhook(WEBHOOK_URL)
-            print(f"✅ Webhook set to: {WEBHOOK_URL}")
-        except Exception as e:
-            print(f"❌ Failed to set webhook: {e}")
-    else:
-        print("⚠️ WEBHOOK_URL is not set! Bot will not receive updates.")
-
-    yield  # FastAPI চালানোর জন্য প্রয়োজনীয় অংশ
-
-# ✅ FastAPI server setup
-app = FastAPI(lifespan=lifespan)
-
-@app.get("/")
-async def home():
-    return {"message": "Bot is running on Webhook!"}
-
-# ✅ FastAPI রাউটার থেকে Webhook কল হবে
-@app.post(f"/{BOT_TOKEN}")
-async def webhook(request: Request):
-    json_str = await request.json()
-    update = types.Update(**json_str)
-    await dp.process_update(update)
-    return {"status": "ok"}
-
-# ✅ Render এর পোর্ট নিয়ন্ত্রণ
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # Render থেকে দেওয়া পোর্ট ব্যবহার
-    uvicorn.run(app, host="0.0.0.0", port=port)  # Webhook সার্ভার চালানো
+    logging.basicConfig(level=logging.INFO)
+    web.run_app(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
