@@ -30,6 +30,20 @@ def extract_id_from_terabox_link(link: str) -> str:
 def generate_new_link_from_id(file_id: str) -> str:
     return f"https://mdiskplay.com/terabox/{file_id}"
 
+# -------------- লিংক থেকে Inline Keyboard তৈরি করা --------------
+def create_keyboard(links):
+    buttons = []
+    for file_id, new_url in links.items():
+        buttons.append([
+            InlineKeyboardButton(text="🎬 ভিডিও দেখুন", url=new_url),
+            InlineKeyboardButton(text="🔗 শেয়ার করুন", switch_inline_query=new_url),
+            InlineKeyboardButton(text="♻️ রিজেনারেট", callback_data=f"regenerate_{file_id}")
+        ])
+    
+    buttons.append([InlineKeyboardButton(text="❌ ডিলিট", callback_data="delete_message")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 # -------------- /start কমান্ড হ্যান্ডলার --------------
 @dp.message(Command("start"))
 async def welcome_message(message: Message):
@@ -42,7 +56,7 @@ async def welcome_message(message: Message):
     )
     await message.reply(welcome_text)
 
-# -------------- মেসেজ হ্যান্ডলার: TERA BOX লিঙ্ক modify করা --------------
+# -------------- মেসেজ হ্যান্ডলার: TERA BOX লিংক modify করা --------------
 @dp.message()
 async def modify_link(message: Message):
     text = message.text or message.caption
@@ -65,20 +79,7 @@ async def modify_link(message: Message):
     await bot.send_chat_action(message.chat.id, action="typing")
     await asyncio.sleep(1.5)
 
-    # বাটন তৈরি
-    buttons = []
-    for file_id, new_url in unique_links.items():
-        buttons.append([
-            InlineKeyboardButton(text="🎬 ভিডিও দেখুন", url=new_url),
-            InlineKeyboardButton(text="🔗 শেয়ার করুন", switch_inline_query=new_url),
-            InlineKeyboardButton(text="♻️ রিজেনারেট", callback_data=f"regenerate_{file_id}")
-        ])
-    
-    buttons.append([
-        InlineKeyboardButton(text="❌ ডিলিট", callback_data="delete_message")
-    ])
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    keyboard = create_keyboard(unique_links)  # বাটন তৈরি
 
     # মেসেজ পাঠানো
     sent_message = await message.reply("🔗 আপনার লিংক পরিবর্তন করা হয়েছে!", reply_markup=keyboard)
@@ -90,14 +91,19 @@ async def regenerate_link(callback: CallbackQuery):
     new_id = file_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন আইডি তৈরি
     new_url = generate_new_link_from_id(new_id)
 
-    buttons = [
-        [InlineKeyboardButton(text="🎬 নতুন ভিডিও দেখুন", url=new_url)],
-        [InlineKeyboardButton(text="🔗 শেয়ার করুন", switch_inline_query=new_url)],
-        [InlineKeyboardButton(text="♻️ আবার রিজেনারেট", callback_data=f"regenerate_{new_id}")],
-        [InlineKeyboardButton(text="❌ ডিলিট", callback_data="delete_message")]
-    ]
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    # পুরোনো লিংক গুলো খুঁজে বের করা
+    links = {}
+    for button in callback.message.reply_markup.inline_keyboard:
+        if len(button) == 3:  # ভিডিও দেখুন, শেয়ার, রিজেনারেট
+            old_url = button[0].url
+            old_file_id = extract_id_from_terabox_link(old_url)
+            if old_file_id:
+                links[old_file_id] = old_url
+
+    # নতুন রিজেনারেট করা লিংক আপডেট করা
+    links[new_id] = new_url
+
+    keyboard = create_keyboard(links)  # আপডেটেড বাটন তৈরি
 
     await callback.message.edit_reply_markup(reply_markup=keyboard)
     await callback.answer("✅ নতুন লিংক তৈরি হয়েছে!")
