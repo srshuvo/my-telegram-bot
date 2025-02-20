@@ -1,5 +1,6 @@
 import logging
 from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command, Text
 from aiogram import F
 from dotenv import load_dotenv
 import os
@@ -28,7 +29,7 @@ async def send_welcome(message: types.Message):
     await message.answer("Welcome! Send a Terabox link to extract ID and generate a new link.")
 
 # Handler for text messages with Terabox link
-@dp.message(F.text)
+@dp.message(Text)
 async def handle_terabox_link(message: types.Message):
     link = message.text
     extracted_id = extract_id(link)
