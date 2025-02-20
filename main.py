@@ -187,9 +187,11 @@ async def start_webserver():
     await site.start()
     logger.info(f"✅ Webserver is running on port {port}")
 
-# -------------- Main ফাংশন: ওয়েব সার্ভার ও বটের পোলিং শুরু করা --------------
+# -------------- Main ফাংশন: Webhook মুছে ফেলুন এবং Polling শুরু করুন --------------
 async def main():
-    asyncio.create_task(start_webserver())
+    # Webhook মুছে ফেলুন
+    await bot.delete_webhook()
+
     logger.info("✅ Bot is starting polling...")
     await dp.start_polling(bot)
 
