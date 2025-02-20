@@ -4,7 +4,7 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.filters import Command
+from aiogram.filters import Command, Text
 from aiohttp import web
 
 # -------------- Logging সেটআপ --------------
@@ -89,7 +89,7 @@ async def regenerate_link(callback: CallbackQuery):
     await callback.answer(f"✅ New ID generated: {new_id}", show_alert=True)
 
 # -------------- Delete Button Handler --------------
-@dp.callback_query(F.data == "delete_message")
+@dp.callback_query(Text(data="delete_message"))
 async def delete_message(callback: CallbackQuery):
     try:
         await bot.delete_message(callback.message.chat.id, callback.message.message_id)
