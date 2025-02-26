@@ -3,8 +3,7 @@ import asyncio
 import os
 import logging
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiohttp import web
 
@@ -21,103 +20,121 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# -------------- TERA BOX লিংক থেকে আইডি বের করা --------------
-def extract_id_from_terabox_link(link: str) -> str:
-    match = re.search(r"https?://[^/]+/s/([^?&]+)", link)
-    return match.group(1) if match else None
-
-# -------------- নতুন লিংক তৈরি করা --------------
-def generate_new_link_from_id(file_id: str) -> str:
-    return f"https://mdiskplay.com/terabox/{file_id}"
-
-# -------------- লিংক থেকে Inline Keyboard তৈরি করা --------------
-def create_keyboard(links):
-    buttons = []
-    for file_id, new_url in links.items():
-        buttons.append([
-            InlineKeyboardButton(text="🎬 ভিডিও দেখুন", url=new_url),
-            InlineKeyboardButton(text="🔗 শেয়ার করুন", switch_inline_query=new_url),
-            InlineKeyboardButton(text="♻️ রিজেনারেট", callback_data=f"regenerate_{file_id}")
-        ])
-    
-    buttons.append([InlineKeyboardButton(text="❌ ডিলিট", callback_data="delete_message")])
-    
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+# -------------- URL Extract ও Modify করার ফাংশন --------------
+def extract_modified_urls(text: str) -> list:
+    urls = re.findall(r"https?://[^\s]+", text)
+    unique_urls = set()
+    modified_urls = []
+    for url in urls:
+        if "tera" in url and not url.startswith("https://player.terabox.tech/?url="):
+            modified_url = f"https://player.terabox.tech/?url={url}"
+            if modified_url not in unique_urls:
+                unique_urls.add(modified_url)
+                modified_urls.append(modified_url)
+    return modified_urls
 
 # -------------- /start কমান্ড হ্যান্ডলার --------------
-@dp.message(Command("start"))
+@dp.message(F.text == "/start")
 async def welcome_message(message: Message):
     first_name = message.from_user.first_name or "বন্ধু"
     welcome_text = (
         f"✨ স্বাগতম, {first_name}! 🌟\n"
-        "🔗 আপনি যদি **TERA BOX** লিংক পাঠান, আমি সেটি প্লে করে দেব! 🎥✨\n"
-        "⚡ লিংক কাজ না করলে? চিন্তা করবেন না! \"♻️ রিজেনারেট\" চাপ দিন এবং নতুন লিংক পেয়ে যাবেন।\n\n"
-        "🔗 Send a **TERA BOX** link, and I’ll play it for you! 🎥✨\n"
-        "⚡ Link not working? Don’t worry! Just click \"♻️ Regenerate\" to get a new link."
+        "আমাদের সেবায় আপনার আগমনকে স্বাগত জানাই! 💫\n\n"
+        "🔗 যদি আপনি **TERA BOX** লিঙ্ক পাঠান, আমরা সেটি নিরাপদভাবে **PLAY** করে দিব। 🎥✨\n\n"
+        "🤔 যেকোনো প্রশ্ন বা সহায়তার জন্য আমাদের সাথে যোগাযোগ করুন।\n\n"
+        f"✨ Welcome, {first_name}! 🌟\n"
+        "We're thrilled to have you here! 💫\n\n"
+        "🔗 If you send a **TERA BOX** link, we'll safely **PLAY** it for you. 🎥✨\n\n"
+        "🤔 If you have any questions or need assistance, feel free to ask! 😊"
     )
-    await message.reply(welcome_text)
+    try:
+        await message.reply(welcome_text)
+        # পিন করা বার্তা শুধুমাত্র /start কমান্ডে পিন হবে
+        await pin_server_issue_message(message.chat.id)
+    except Exception as e:
+        logger.error(f"Error sending welcome message: {e}")
 
-# -------------- মেসেজ হ্যান্ডলার: TERA BOX লিংক modify করা --------------
+# -------------- পিন করা নোটিফিকেশন মেসেজ --------------
+async def pin_server_issue_message(chat_id: int):
+    message_text = (
+        "⚠️ **সার্ভার সমস্যার কারণে বট এর লিঙ্ক পাঠাতে দেরি হতে পারে** ⚠️\n"
+        "📌 **লিঙ্ক পাঠাতে থাকুন, সার্ভার ঠিক হলে সব ভিডিও পাঠানো হবে।**\n\n"
+        "⚠️ **Due to server issues, the bot may take time to send links.** ⚠️\n"
+        "📌 **Keep sending links, and once the server is fixed, all videos will be sent.**"
+    )
+
+    try:
+        sent_message = await bot.send_message(chat_id, message_text, parse_mode="Markdown")
+        await sent_message.pin()  # শুধুমাত্র /start কমান্ডে পিন হবে
+    except Exception as e:
+        logger.error(f"Error pinning message: {e}")
+
+# -------------- মেসেজ হ্যান্ডলার: TERA BOX লিঙ্ক modify করা --------------
 @dp.message()
 async def modify_link(message: Message):
     text = message.text or message.caption
     if not text:
         return
 
-    urls = re.findall(r"https?://[^\s]+", text)  # সব লিংক খুঁজে বের করা
-    unique_links = {}  # ডুপ্লিকেট রোধ করতে
-
-    for url in urls:
-        if "tera" in url:  # শুধুমাত্র TERA BOX লিংক পরিবর্তন করবে
-            file_id = extract_id_from_terabox_link(url)
-            if file_id and file_id not in unique_links:
-                unique_links[file_id] = generate_new_link_from_id(file_id)
-
-    if not unique_links:
-        return  # যদি কোনো TERA BOX লিংক না থাকে, তাহলে কিছু করবে না
+    modified_urls = extract_modified_urls(text)
+    if not modified_urls:
+        return
 
     # টাইপিং ইফেক্ট দেখানোর জন্য
     await bot.send_chat_action(message.chat.id, action="typing")
     await asyncio.sleep(1.5)
 
-    keyboard = create_keyboard(unique_links)  # বাটন তৈরি
+    # মূল লিঙ্কগুলি মুছে ফেলা
+    for url in modified_urls:
+        text = text.replace(url, "")
 
-    # মেসেজ পাঠানো
-    sent_message = await message.reply("🔗 আপনার লিংক পরিবর্তন করা হয়েছে!", reply_markup=keyboard)
+    # প্রতিটি modified URL এর জন্য ইনলাইন বাটন তৈরি
+    buttons = []
+    for i, url in enumerate(modified_urls):
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"🎬 Watch Video {i+1} - Click to Watch!",  # কাস্টম বাটন টেক্সট (আরও আকর্ষণীয়)
+                url=url,
+            ),
+            InlineKeyboardButton(
+                text="🔗 Share this Link Now!",  # শেয়ার লিঙ্ক বাটন টেক্সট (আরও স্পষ্ট)
+                switch_inline_query=url
+            )
+        ])
+    buttons.append([
+        InlineKeyboardButton(
+            text="🗑️ Delete This Message",  # কাস্টম ডিলিট বাটন টেক্সট
+            callback_data="delete_message"
+        )
+    ])
 
-# -------------- রিজেনারেট বাটন হ্যান্ডলার --------------
-@dp.callback_query(lambda c: c.data.startswith("regenerate_"))
-async def regenerate_link(callback: CallbackQuery):
-    file_id = callback.data.replace("regenerate_", "")
-    new_id = file_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন আইডি তৈরি
-    new_url = generate_new_link_from_id(new_id)
+    # কাস্টম স্টাইলিং সহ ইনলাইন কীবোর্ড তৈরি
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-    # পুরোনো লিংক গুলো খুঁজে বের করা
-    links = {}
-    for button in callback.message.reply_markup.inline_keyboard:
-        if len(button) == 3:  # ভিডিও দেখুন, শেয়ার, রিজেনারেট
-            old_url = button[0].url
-            old_file_id = extract_id_from_terabox_link(old_url)
-            if old_file_id:
-                links[old_file_id] = old_url
-
-    # নতুন রিজেনারেট করা লিংক আপডেট করা
-    links[new_id] = new_url
-
-    keyboard = create_keyboard(links)  # আপডেটেড বাটন তৈরি
-
-    await callback.message.edit_reply_markup(reply_markup=keyboard)
-    await callback.answer("✅ নতুন লিংক তৈরি হয়েছে!")
+    # শুধুমাত্র বাটন সহ মেসেজ পাঠানো
+    sent_message = None
+    if message.text:
+        sent_message = await message.reply(text, reply_markup=keyboard)
+    elif message.photo:
+        sent_message = await message.reply_photo(photo=message.photo[-1].file_id, caption=text, reply_markup=keyboard)
+    elif message.video:
+        sent_message = await message.reply_video(video=message.video.file_id, caption=text, reply_markup=keyboard)
+    elif message.document:
+        sent_message = await message.reply_document(document=message.document.file_id, caption=text, reply_markup=keyboard)
+    elif message.audio:
+        sent_message = await message.reply_audio(audio=message.audio.file_id, caption=text, reply_markup=keyboard)
+    elif message.voice:
+        sent_message = await message.reply_voice(voice=message.voice.file_id, caption=text, reply_markup=keyboard)
 
 # -------------- Delete Button Handler --------------
-@dp.callback_query(lambda c: c.data == "delete_message")
+@dp.callback_query(F.data == "delete_message")
 async def delete_message(callback: CallbackQuery):
     try:
         await bot.delete_message(callback.message.chat.id, callback.message.message_id)
-        await callback.answer("✅ মেসেজ মুছে ফেলা হয়েছে!", show_alert=True)
+        await callback.answer("✅ Message deleted successfully!", show_alert=True)
     except Exception as e:
         logger.error(f"Error deleting message: {e}")
-        await callback.answer("❌ মেসেজ ডিলিট করতে ব্যর্থ!", show_alert=True)
+        await callback.answer("❌ Failed to delete message!", show_alert=True)
 
 # -------------- Keep-Alive ওয়েব সার্ভার (aiohttp) --------------
 async def handle(request):
@@ -140,3 +157,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
