@@ -30,12 +30,15 @@ def extract_id_from_terabox_link(link: str) -> str:
 def generate_new_link_from_id(file_id: str) -> str:
     return f"https://mdiskplay.com/terabox/{file_id}"
 
+# -------------- Player লিংক তৈরি করা --------------
+def generate_player_link(file_id: str) -> str:
+    return f"https://video.mdiskplay.com/{file_id}.m3u8"
+
 # -------------- লিংক থেকে Inline Keyboard তৈরি করা --------------
 def create_keyboard(links):
     buttons = []
     for file_id, new_url in links.items():
-        # "https://" এর পর "video." যুক্ত করে Player লিংক তৈরি
-        player_url = new_url.replace("https://", "https://video.") + ".m3u8"
+        player_url = generate_player_link(file_id)  # নতুন Player লিংক তৈরি
 
         buttons.append([
             InlineKeyboardButton(text="🎬 ভিডিও দেখুন", url=new_url),
@@ -95,9 +98,7 @@ async def regenerate_link(callback: CallbackQuery):
     file_id = callback.data.replace("regenerate_", "")
     new_id = file_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন আইডি তৈরি
     new_url = generate_new_link_from_id(new_id)
-
-    # "https://" এর পর "video." যুক্ত করে Player লিংক তৈরি
-    player_url = new_url.replace("https://", "https://video.") + ".m3u8"
+    player_url = generate_player_link(new_id)  # নতুন Player লিংক তৈরি
 
     # পুরোনো লিংক গুলো খুঁজে বের করা
     links = {}
