@@ -34,8 +34,11 @@ def generate_new_link_from_id(file_id: str) -> str:
 def create_keyboard(links):
     buttons = []
     for file_id, new_url in links.items():
+        player_url = f"{new_url}.m3u8"  # নতুন লিংকে .m3u8 যোগ করা
+
         buttons.append([
             InlineKeyboardButton(text="🎬 ভিডিও দেখুন", url=new_url),
+            InlineKeyboardButton(text="🎵 Player", url=player_url),  # নতুন Player বাটন
             InlineKeyboardButton(text="🔗 শেয়ার করুন", switch_inline_query=new_url),
             InlineKeyboardButton(text="♻️ রিজেনারেট", callback_data=f"regenerate_{file_id}")
         ])
@@ -83,7 +86,7 @@ async def modify_link(message: Message):
     keyboard = create_keyboard(unique_links)  # বাটন তৈরি
 
     # মেসেজ পাঠানো
-    sent_message = await message.reply("🔗 আপনার লিংক পরিবর্তন করা হয়েছে!", reply_markup=keyboard)
+    await message.reply("🔗 আপনার লিংক পরিবর্তন করা হয়েছে!", reply_markup=keyboard)
 
 # -------------- রিজেনারেট বাটন হ্যান্ডলার --------------
 @dp.callback_query(lambda c: c.data.startswith("regenerate_"))
@@ -91,11 +94,12 @@ async def regenerate_link(callback: CallbackQuery):
     file_id = callback.data.replace("regenerate_", "")
     new_id = file_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন আইডি তৈরি
     new_url = generate_new_link_from_id(new_id)
+    player_url = f"{new_url}.m3u8"  # নতুন লিংকে .m3u8 যুক্ত করা
 
     # পুরোনো লিংক গুলো খুঁজে বের করা
     links = {}
     for button in callback.message.reply_markup.inline_keyboard:
-        if len(button) == 3:  # ভিডিও দেখুন, শেয়ার, রিজেনারেট
+        if len(button) >= 3:  # ভিডিও দেখুন, শেয়ার, রিজেনারেট বাটন আছে
             old_url = button[0].url
             old_file_id = extract_id_from_terabox_link(old_url)
             if old_file_id:
