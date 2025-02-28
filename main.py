@@ -30,7 +30,7 @@ def extract_id_from_terabox_link(link: str) -> str:
 def generate_new_link_from_id(file_id: str) -> str:
     return f"https://mdiskplay.com/terabox/{file_id}"
 
-# -------------- M3U8 লিংক তৈরি করা --------------
+# -------------- m3u8 লিংক তৈরি করা --------------
 def generate_m3u8_link_from_id(file_id: str) -> str:
     return f"https://video.mdiskplay.com/{file_id}.m3u8"
 
@@ -70,15 +70,13 @@ async def modify_link(message: Message):
 
     urls = re.findall(r"https?://[^\s]+", text)  # সব লিংক খুঁজে বের করা
     unique_links = {}  # ডুপ্লিকেট রোধ করতে
-    m3u8_links = []  # .m3u8 লিংক আলাদা সংগ্রহ
 
     for url in urls:
         if "tera" in url:  # শুধুমাত্র TERA BOX লিংক পরিবর্তন করবে
             file_id = extract_id_from_terabox_link(url)
-            if file_id:
+            if file_id and file_id not in unique_links:
                 unique_links[file_id] = generate_new_link_from_id(file_id)
-                m3u8_link = generate_m3u8_link_from_id(file_id)  # আলাদা .m3u8 লিংক তৈরি
-                m3u8_links.append(m3u8_link)
+                m3u8_link = generate_m3u8_link_from_id(file_id)  # m3u8 লিংক তৈরি
 
     if not unique_links:
         return  # যদি কোনো TERA BOX লিংক না থাকে, তাহলে কিছু করবে না
@@ -87,13 +85,13 @@ async def modify_link(message: Message):
     await bot.send_chat_action(message.chat.id, action="typing")
     await asyncio.sleep(1.5)
 
-    # মেসেজ পাঠানো
     keyboard = create_keyboard(unique_links)  # বাটন তৈরি
-    sent_message = await message.reply("🔗 আপনার লিংক পরিবর্তন করা হয়েছে!", reply_markup=keyboard)
 
-    # .m3u8 লিংক আলাদা পাঠানো
-    if m3u8_links:
-        await message.reply("🎬 এখানে আপনার ভিডিওর M3U8 লিংক রয়েছে:\n" + "\n".join(m3u8_links))
+    # মেসেজ পাঠানো
+    sent_message = await message.reply("🔗 আপনার লিংক পরিবর্তন করা হয়েছে!", reply_markup=keyboard)
+    
+    # নতুন m3u8 লিংক আলাদা মেসেজ হিসেবে পাঠানো
+    await message.reply(f"🎬 আপনার ভিডিওর M3U8 লিংক:\n{m3u8_link}")
 
 # -------------- রিজেনারেট বাটন হ্যান্ডলার --------------
 @dp.callback_query(lambda c: c.data.startswith("regenerate_"))
@@ -101,6 +99,7 @@ async def regenerate_link(callback: CallbackQuery):
     file_id = callback.data.replace("regenerate_", "")
     new_id = file_id[1:]  # প্রথম ক্যারেক্টার বাদ দিয়ে নতুন আইডি তৈরি
     new_url = generate_new_link_from_id(new_id)
+    new_m3u8_url = generate_m3u8_link_from_id(new_id)  # নতুন m3u8 লিংক তৈরি
 
     # পুরোনো লিংক গুলো খুঁজে বের করা
     links = {}
@@ -117,6 +116,10 @@ async def regenerate_link(callback: CallbackQuery):
     keyboard = create_keyboard(links)  # আপডেটেড বাটন তৈরি
 
     await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+    # নতুন m3u8 লিংক আলাদা ভাবে পাঠানো
+    await callback.message.reply(f"🎬 নতুন M3U8 লিংক:\n{new_m3u8_url}")
+
     await callback.answer("✅ নতুন লিংক তৈরি হয়েছে!")
 
 # -------------- Delete Button Handler --------------
