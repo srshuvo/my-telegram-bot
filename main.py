@@ -1,61 +1,64 @@
-import logging
-import os
-import asyncio
-from flask import Flask, request
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ParseMode
-from aiogram.utils.executor import start_webhook
+<!DOCTYPE html>
+<html lang="en">
 
-from dotenv import load_dotenv
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terabox Video Fetcher</title>
+    <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
+    <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
+    <style>
+        .video-js {
+            margin: 0 auto;
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
 
-# .env ফাইল থেকে টোকেন এবং ওয়েবহুক ইউআরএল লোড করুন
-load_dotenv()
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+    </style>
+    <script>
+        function extractVideoId(url) {
+            const parts = url.split('/');
+            return parts[parts.length - 1];
+        }
 
-API_TOKEN = os.getenv('BOT_TOKEN')
-WEBHOOK_HOST = os.getenv('WEBHOOK_HOST')
-WEBHOOK_PATH = '/webhook'
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+        function loadVideo(videoUrl) {
+            const videoContainer = document.getElementById('video-container');
+            videoContainer.innerHTML = `
+                <video id="video-player" class="video-js" controls preload="auto" width="100%" height="100%">
+                    <source src="${videoUrl}" type="application/x-mpegURL">
+                </video>
+            `;
+            const videoPlayer = videojs(document.getElementById('video-player'));
+            videoPlayer.on('error', function() {
+                console.error('Error loading video:', videoPlayer.error());
+                console.log('Video URL:', videoUrl);
+                alert('Error loading video. Please try again.');
+            });
+        }
 
-# Bot এবং Dispatcher তৈরি
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+        function loadVideoFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            const url = params.get('url');
+            if (url) {
+                const videoId = extractVideoId(url);
+                const videoUrl = `https://jolly-union-9cc3.shraj.workers.dev/?id=${videoId}`;
+                console.log('Video URL:', videoUrl);
+                loadVideo(videoUrl);
+            }
+        }
 
-# Flask অ্যাপ সেট আপ
-app = Flask(__name__)
+        window.onload = loadVideoFromUrl;
+    </script>
+</head>
 
-# লগিং কনফিগারেশন
-logging.basicConfig(level=logging.INFO)
+<body>
+    <div id="video-container"></div>
+</body>
 
-# /start কমান্ড হ্যান্ডলার
-@dp.message_handler(commands=["start"])
-async def start(message: types.Message):
-    await message.answer("হ্যালো! আমি আপনার সহকারী।")
-
-# Webhook হ্যান্ডলার
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    json_str = request.get_data(as_text=True)
-    try:
-        # Aiogram 3.x তে from_json() ব্যবহার করুন
-        update = types.Update.from_json(json_str)
-        dp.process_update(update)
-        return "OK"
-    except Exception as e:
-        logging.error(f"Error processing webhook: {e}")
-        return "Error", 500
-
-# Webhook সেটআপের জন্য ফাংশন
-async def on_start():
-    # ওয়েবহুক সেট করুন
-    await bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"Webhook set to: {WEBHOOK_URL}")
-
-# Flask এ ওয়েবহুক চালু করার জন্য
-@app.before_first_request
-def before_first_request():
-    loop = asyncio.get_event_loop()
-    loop.create_task(on_start())
-
-# Flask অ্যাপ চালু করুন
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=False)
+</html>
