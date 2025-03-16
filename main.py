@@ -1,13 +1,12 @@
 import os
 import re
-import asyncio
 import requests
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from aiogram.utils import start_webhook
 from flask import Flask, request
 from threading import Thread
+import asyncio
 
 # ✅ Environment Variables থেকে Bot Token নেওয়া
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -94,15 +93,11 @@ def run_flask():
     app.run(host="0.0.0.0", port=5000)
 
 # ✅ Webhook URL সেট করা (Aiogram 3.x অনুযায়ী)
-async def on_start_webhook(app):
+async def on_start():
     webhook_url = "https://my-telegram-bot-s14z.onrender.com/webhook"  # Webhook URL
     await bot.set_webhook(webhook_url)
-    return dp
-
-# ✅ বট চালু করা (Webhook Mode)
-async def on_start():
-    dp = await on_start_webhook(None)
-    await dp.start_webhook(bot)
+    # ✅ Start Webhook Handling
+    await dp.start_webhook(bot, webhook_url)
 
 # ✅ Flask & Bot একসাথে চালানো
 if __name__ == "__main__":
