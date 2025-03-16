@@ -1,20 +1,27 @@
-import asyncio
 import os
+import asyncio
 import json
 import requests
+from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from aiogram.types import Message
 from fastapi import FastAPI
+from flask import Flask
 
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-bot = Bot(token=TOKEN)
+# .env ফাইল থেকে Environment Variables লোড করা
+load_dotenv()
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# Flask & FastAPI Instance (Render.com-এ হোস্টিংয়ের জন্য)
+flask_app = Flask(__name__)
+fastapi_app = FastAPI()
+
+# Aiogram Bot Setup
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-app = FastAPI()
-
-# ভিডিও ডাটা ফেচ করার ফাংশন
+# Terabox ভিডিও ডাটা ফেচ করার ফাংশন
 def fetch_video_data(url):
     try:
         id = url.split("/")[-1]  # URL থেকে ID বের করা
@@ -38,12 +45,12 @@ def fetch_video_data(url):
 
 # Start Command
 @dp.message(Command("start"))
-async def start(message: Message):
+async def start(message: types.Message):
     await message.answer("👋 Welcome to Terabox Player Bot!\nSend me a Terabox URL to fetch the video.")
 
 # URL হ্যান্ডলিং ফাংশন
 @dp.message()
-async def handle_url(message: Message):
+async def handle_url(message: types.Message):
     url = message.text.strip()
     
     if "terabox" not in url:
@@ -70,10 +77,15 @@ async def handle_url(message: Message):
         parse_mode="Markdown"
     )
 
-# FastAPI Route for Render.com
-@app.get("/")
+# FastAPI Route for Render.com (Status Check)
+@fastapi_app.get("/")
 def read_root():
     return {"status": "Bot is Running"}
+
+# Flask Route for Render.com (Alternative)
+@flask_app.route("/")
+def home():
+    return "Bot is Running Successfully!"
 
 # বট চালানোর ফাংশন
 async def main():
@@ -83,4 +95,11 @@ async def main():
 
 # স্ক্রিপ্ট রান হলে asyncio দিয়ে চালু করা হবে
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+
+    # Flask এবং FastAPI একসাথে চালানো
+    import threading
+    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=8000)).start()
+    import uvicorn
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=8080)
