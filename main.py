@@ -5,6 +5,7 @@ import requests
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
+from aiogram.utils.executor import start_webhook
 from flask import Flask, request
 from threading import Thread
 
@@ -82,20 +83,28 @@ def index():
     return "Terabox Bot is Running!"
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
-    update = await request.get_json()
-    await dp.feed_update(bot, types.Update(**update))
+def webhook():
+    json_str = request.get_data(as_text=True)
+    update = types.Update.de_json(json_str)
+    dp.process_update(update)
     return "OK"
 
 # ✅ Flask সার্ভার চালু করা
 def run_flask():
     app.run(host="0.0.0.0", port=5000)
 
-# ✅ বট চালু করা (Polling Mode)
-async def run_bot():
+# ✅ Webhook URL সেট করা (Aiogram 3.x অনুযায়ী)
+async def on_start_webhook(app):
+    webhook_url = "https://my-telegram-bot-s14z.onrender.com/webhook"  # Webhook URL
+    await bot.set_webhook(webhook_url)
+    return dp
+
+# ✅ বট চালু করা (Webhook Mode)
+async def on_start():
+    dp = await on_start_webhook(None)
     await dp.start_polling(bot)
 
 # ✅ Flask & Bot একসাথে চালানো
 if __name__ == "__main__":
     Thread(target=run_flask).start()
-    asyncio.run(run_bot())
+    asyncio.run(on_start())
