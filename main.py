@@ -1,20 +1,21 @@
 import os
 import re
+import asyncio
 import requests
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
+from aiogram.filters import Command
 from flask import Flask, request
 from threading import Thread
 
-# ✅ Telegram Bot Token (Render-এর Environment Variables থেকে আনতে হবে)
+# ✅ Environment Variables থেকে Bot Token নেওয়া
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# ✅ Bot & Dispatcher সেটআপ
+# ✅ Bot & Dispatcher সেটআপ (aiogram 3.x অনুযায়ী)
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
-# ✅ Regex ফাংশন: Terabox লিংক থেকে আইডি বের করা
+# ✅ Regex ফাংশন: Terabox লিংক থেকে ID বের করা
 def extract_terabox_id(url):
     match = re.search(r"(?:id=|s/)([\w\d]+)", url)
     return match.group(1) if match else None
@@ -33,24 +34,24 @@ def fetch_video_data(terabox_id):
     return None
 
 # ✅ /start কমান্ড
-@dp.message_handler(commands=['start'])
+@dp.message(Command("start"))
 async def send_welcome(message: types.Message):
-    await message.reply("👋 Welcome to *Terabox Player Bot*! Send me a Terabox URL to fetch the video.", parse_mode="Markdown")
+    await message.answer("👋 Welcome to *Terabox Player Bot*! Send me a Terabox URL to fetch the video.", parse_mode="Markdown")
 
 # ✅ লিংক প্রসেস করা
-@dp.message_handler()
+@dp.message()
 async def process_link(message: types.Message):
     url = message.text.strip()
     terabox_id = extract_terabox_id(url)
 
     if not terabox_id:
-        await message.reply("❌ Invalid Terabox URL! Please send a valid link.")
+        await message.answer("❌ Invalid Terabox URL! Please send a valid link.")
         return
 
     video_data = fetch_video_data(terabox_id)
 
     if not video_data:
-        await message.reply("❌ Couldn't fetch video details. Try again later.")
+        await message.answer("❌ Couldn't fetch video details. Try again later.")
         return
 
     # ✅ ভিডিওর তথ্য সংগ্রহ
@@ -60,14 +61,13 @@ async def process_link(message: types.Message):
     hd_download = video_data["resolutions"].get("HD Video", "#")
 
     # ✅ Inline Keyboard Buttons
-    buttons = InlineKeyboardMarkup(row_width=2)
-    buttons.add(
-        InlineKeyboardButton("📥 Fast Download", url=fast_download),
-        InlineKeyboardButton("🔼 HD Download", url=hd_download)
-    )
+    buttons = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📥 Fast Download", url=fast_download)],
+        [InlineKeyboardButton(text="🔼 HD Download", url=hd_download)]
+    ])
 
     # ✅ ইউজারকে মেসেজ পাঠানো
-    await message.reply_photo(
+    await message.answer_photo(
         photo=thumbnail,
         caption=f"🎬 *{title}*\n\n🔗 [Watch Video](https://apis.forn.fun/tera/data.php?id={terabox_id})",
         parse_mode="Markdown",
@@ -82,9 +82,9 @@ def index():
     return "Terabox Bot is Running!"
 
 @app.route('/webhook', methods=['POST'])
-def webhook():
-    update = types.Update.de_json(request.get_json())
-    dp.process_update(update)
+async def webhook():
+    update = await request.get_json()
+    await dp.feed_update(bot, types.Update(**update))
     return "OK"
 
 # ✅ Flask সার্ভার চালু করা
@@ -92,10 +92,10 @@ def run_flask():
     app.run(host="0.0.0.0", port=5000)
 
 # ✅ বট চালু করা (Polling Mode)
-def run_bot():
-    executor.start_polling(dp, skip_updates=True)
+async def run_bot():
+    await dp.start_polling(bot)
 
 # ✅ Flask & Bot একসাথে চালানো
 if __name__ == "__main__":
     Thread(target=run_flask).start()
-    run_bot()
+    asyncio.run(run_bot())
