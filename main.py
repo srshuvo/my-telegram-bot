@@ -1,105 +1,101 @@
 import os
-import asyncio
-import json
+import re
 import requests
-from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
-from fastapi import FastAPI
-from flask import Flask
+from aiogram.utils import executor
+from flask import Flask, request
+from threading import Thread
 
-# .env ফাইল থেকে Environment Variables লোড করা
-load_dotenv()
+# ✅ Telegram Bot Token (Render-এর Environment Variables থেকে আনতে হবে)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Flask & FastAPI Instance (Render.com-এ হোস্টিংয়ের জন্য)
-flask_app = Flask(__name__)
-fastapi_app = FastAPI()
-
-# Aiogram Bot Setup
+# ✅ Bot & Dispatcher সেটআপ
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(bot)
 
-# Terabox ভিডিও ডাটা ফেচ করার ফাংশন
-def fetch_video_data(url):
-    try:
-        id = url.split("/")[-1]  # URL থেকে ID বের করা
-        api_url = f"https://wholly-api.skinnyrunner.com/get/website-data.php?get_html=https://www.terabox.tech/api/yttera?id={id}"
-        response = requests.get(api_url)
-        data = json.loads(response.text)
+# ✅ Regex ফাংশন: Terabox লিংক থেকে আইডি বের করা
+def extract_terabox_id(url):
+    match = re.search(r"(?:id=|s/)([\w\d]+)", url)
+    return match.group(1) if match else None
 
-        if "response" not in data:
-            return None
-
-        video_data = data["response"][0]
-        return {
-            "title": video_data["title"],
-            "thumbnail": video_data["thumbnail"],
-            "fast_download": video_data["resolutions"]["Fast Download"],
-            "hd_download": video_data["resolutions"]["HD Video"],
-            "video_url": f"https://apis.forn.fun/tera/data.php?id={id}"
-        }
-    except:
-        return None
-
-# Start Command
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    await message.answer("👋 Welcome to Terabox Player Bot!\nSend me a Terabox URL to fetch the video.")
-
-# URL হ্যান্ডলিং ফাংশন
-@dp.message()
-async def handle_url(message: types.Message):
-    url = message.text.strip()
+# ✅ API ফাংশন: Terabox API থেকে ভিডিওর তথ্য পাওয়া
+def fetch_video_data(terabox_id):
+    api_url = f"https://www.terabox.tech/api/yttera?id={terabox_id}"
+    response = requests.get(api_url)
     
-    if "terabox" not in url:
-        await message.answer("❌ Invalid Terabox URL! Please send a valid link.")
+    if response.status_code == 200:
+        try:
+            data = response.json()
+            return data.get("response", [])[0]  # প্রথম ভিডিওর তথ্য
+        except ValueError:
+            return None
+    return None
+
+# ✅ /start কমান্ড
+@dp.message_handler(commands=['start'])
+async def send_welcome(message: types.Message):
+    await message.reply("👋 Welcome to *Terabox Player Bot*! Send me a Terabox URL to fetch the video.", parse_mode="Markdown")
+
+# ✅ লিংক প্রসেস করা
+@dp.message_handler()
+async def process_link(message: types.Message):
+    url = message.text.strip()
+    terabox_id = extract_terabox_id(url)
+
+    if not terabox_id:
+        await message.reply("❌ Invalid Terabox URL! Please send a valid link.")
         return
 
-    video_data = fetch_video_data(url)
+    video_data = fetch_video_data(terabox_id)
 
     if not video_data:
-        await message.answer("⚠️ Failed to fetch video data. Please try again later.")
+        await message.reply("❌ Couldn't fetch video details. Try again later.")
         return
 
-    # ইনলাইন বোতাম তৈরি
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📥 Fast Download", url=video_data["fast_download"])],
-        [InlineKeyboardButton(text="🔼 HD Download", url=video_data["hd_download"])]
-    ])
+    # ✅ ভিডিওর তথ্য সংগ্রহ
+    title = video_data["title"]
+    thumbnail = video_data["thumbnail"]
+    fast_download = video_data["resolutions"].get("Fast Download", "#")
+    hd_download = video_data["resolutions"].get("HD Video", "#")
 
-    # ভিডিও Thumbnail সহ মেসেজ পাঠানো
-    await message.answer_photo(
-        photo=video_data["thumbnail"],
-        caption=f"🎬 *{video_data['title']}*\n\n🔗 [Watch Video]({video_data['video_url']})",
-        reply_markup=keyboard,
-        parse_mode="Markdown"
+    # ✅ Inline Keyboard Buttons
+    buttons = InlineKeyboardMarkup(row_width=2)
+    buttons.add(
+        InlineKeyboardButton("📥 Fast Download", url=fast_download),
+        InlineKeyboardButton("🔼 HD Download", url=hd_download)
     )
 
-# FastAPI Route for Render.com (Status Check)
-@fastapi_app.get("/")
-def read_root():
-    return {"status": "Bot is Running"}
+    # ✅ ইউজারকে মেসেজ পাঠানো
+    await message.reply_photo(
+        photo=thumbnail,
+        caption=f"🎬 *{title}*\n\n🔗 [Watch Video](https://apis.forn.fun/tera/data.php?id={terabox_id})",
+        parse_mode="Markdown",
+        reply_markup=buttons
+    )
 
-# Flask Route for Render.com (Alternative)
-@flask_app.route("/")
-def home():
-    return "Bot is Running Successfully!"
+# ✅ Flask Webhook (Render-এর জন্য)
+app = Flask(__name__)
 
-# বট চালানোর ফাংশন
-async def main():
-    print("🤖 Bot is running...")
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+@app.route('/')
+def index():
+    return "Terabox Bot is Running!"
 
-# স্ক্রিপ্ট রান হলে asyncio দিয়ে চালু করা হবে
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update = types.Update.de_json(request.get_json())
+    dp.process_update(update)
+    return "OK"
+
+# ✅ Flask সার্ভার চালু করা
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
+# ✅ বট চালু করা (Polling Mode)
+def run_bot():
+    executor.start_polling(dp, skip_updates=True)
+
+# ✅ Flask & Bot একসাথে চালানো
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(main())
-
-    # Flask এবং FastAPI একসাথে চালানো
-    import threading
-    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=8000)).start()
-    import uvicorn
-    uvicorn.run(fastapi_app, host="0.0.0.0", port=8080)
+    Thread(target=run_flask).start()
+    run_bot()
