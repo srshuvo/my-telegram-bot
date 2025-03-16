@@ -1,16 +1,18 @@
+import asyncio
 import os
 import json
 import requests
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
+from aiogram.filters import Command
+from aiogram.types import Message
 from fastapi import FastAPI
 
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # এখানে আপনার Bot Token বসান
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
 
-app = FastAPI()  # Render.com-এ হোস্টিংয়ের জন্য FastAPI ব্যবহার করা হবে
+app = FastAPI()
 
 # ভিডিও ডাটা ফেচ করার ফাংশন
 def fetch_video_data(url):
@@ -35,46 +37,50 @@ def fetch_video_data(url):
         return None
 
 # Start Command
-@dp.message_handler(commands=['start'])
-async def start(message: types.Message):
-    await message.reply("👋 Welcome to Terabox Player Bot!\nSend me a Terabox URL to fetch the video.")
+@dp.message(Command("start"))
+async def start(message: Message):
+    await message.answer("👋 Welcome to Terabox Player Bot!\nSend me a Terabox URL to fetch the video.")
 
 # URL হ্যান্ডলিং ফাংশন
-@dp.message_handler()
-async def handle_url(message: types.Message):
+@dp.message()
+async def handle_url(message: Message):
     url = message.text.strip()
     
     if "terabox" not in url:
-        await message.reply("❌ Invalid Terabox URL! Please send a valid link.")
+        await message.answer("❌ Invalid Terabox URL! Please send a valid link.")
         return
 
     video_data = fetch_video_data(url)
 
     if not video_data:
-        await message.reply("⚠️ Failed to fetch video data. Please try again later.")
+        await message.answer("⚠️ Failed to fetch video data. Please try again later.")
         return
 
     # ইনলাইন বোতাম তৈরি
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("📥 Fast Download", url=video_data["fast_download"]),
-        InlineKeyboardButton("🔼 HD Download", url=video_data["hd_download"])
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📥 Fast Download", url=video_data["fast_download"])],
+        [InlineKeyboardButton(text="🔼 HD Download", url=video_data["hd_download"])]
+    ])
 
     # ভিডিও Thumbnail সহ মেসেজ পাঠানো
-    await message.reply_photo(
+    await message.answer_photo(
         photo=video_data["thumbnail"],
         caption=f"🎬 *{video_data['title']}*\n\n🔗 [Watch Video]({video_data['video_url']})",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
 
-# Render.com-এর জন্য FastAPI Route
+# FastAPI Route for Render.com
 @app.get("/")
 def read_root():
     return {"status": "Bot is Running"}
 
-# বট চালানো
+# বট চালানোর ফাংশন
+async def main():
+    print("🤖 Bot is running...")
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+# স্ক্রিপ্ট রান হলে asyncio দিয়ে চালু করা হবে
 if __name__ == "__main__":
-    from aiogram import executor
-    executor.start_polling(dp, skip_updates=True)
+    asyncio.run(main())
