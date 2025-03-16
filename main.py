@@ -5,7 +5,7 @@ import requests
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from aiogram.utils.executor import start_webhook
+from aiogram.utils import start_webhook
 from flask import Flask, request
 from threading import Thread
 
@@ -102,7 +102,7 @@ async def on_start_webhook(app):
 # ✅ বট চালু করা (Webhook Mode)
 async def on_start():
     dp = await on_start_webhook(None)
-    await dp.start_polling(bot)
+    await dp.start_webhook(bot)
 
 # ✅ Flask & Bot একসাথে চালানো
 if __name__ == "__main__":
