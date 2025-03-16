@@ -1,105 +1,61 @@
+import logging
 import os
-import re
-import requests
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
-from flask import Flask, request
-from threading import Thread
 import asyncio
+from flask import Flask, request
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ParseMode
+from aiogram.utils.executor import start_webhook
 
-# ✅ Environment Variables থেকে Bot Token নেওয়া
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+from dotenv import load_dotenv
 
-# ✅ Bot & Dispatcher সেটআপ (aiogram 3.x অনুযায়ী)
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+# .env ফাইল থেকে টোকেন এবং ওয়েবহুক ইউআরএল লোড করুন
+load_dotenv()
 
-# ✅ Regex ফাংশন: Terabox লিংক থেকে ID বের করা
-def extract_terabox_id(url):
-    match = re.search(r"(?:id=|s/)([\w\d]+)", url)
-    return match.group(1) if match else None
+API_TOKEN = os.getenv('BOT_TOKEN')
+WEBHOOK_HOST = os.getenv('WEBHOOK_HOST')
+WEBHOOK_PATH = '/webhook'
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
-# ✅ API ফাংশন: Terabox API থেকে ভিডিওর তথ্য পাওয়া
-def fetch_video_data(terabox_id):
-    api_url = f"https://www.terabox.tech/api/yttera?id={terabox_id}"
-    response = requests.get(api_url)
-    
-    if response.status_code == 200:
-        try:
-            data = response.json()
-            return data.get("response", [])[0]  # প্রথম ভিডিওর তথ্য
-        except ValueError:
-            return None
-    return None
+# Bot এবং Dispatcher তৈরি
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
 
-# ✅ /start কমান্ড
-@dp.message(Command("start"))
-async def send_welcome(message: types.Message):
-    await message.answer("👋 Welcome to *Terabox Player Bot*! Send me a Terabox URL to fetch the video.", parse_mode="Markdown")
-
-# ✅ লিংক প্রসেস করা
-@dp.message()
-async def process_link(message: types.Message):
-    url = message.text.strip()
-    terabox_id = extract_terabox_id(url)
-
-    if not terabox_id:
-        await message.answer("❌ Invalid Terabox URL! Please send a valid link.")
-        return
-
-    video_data = fetch_video_data(terabox_id)
-
-    if not video_data:
-        await message.answer("❌ Couldn't fetch video details. Try again later.")
-        return
-
-    # ✅ ভিডিওর তথ্য সংগ্রহ
-    title = video_data["title"]
-    thumbnail = video_data["thumbnail"]
-    fast_download = video_data["resolutions"].get("Fast Download", "#")
-    hd_download = video_data["resolutions"].get("HD Video", "#")
-
-    # ✅ Inline Keyboard Buttons
-    buttons = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📥 Fast Download", url=fast_download)],
-        [InlineKeyboardButton(text="🔼 HD Download", url=hd_download)]
-    ])
-
-    # ✅ ইউজারকে মেসেজ পাঠানো
-    await message.answer_photo(
-        photo=thumbnail,
-        caption=f"🎬 *{title}*\n\n🔗 [Watch Video](https://apis.forn.fun/tera/data.php?id={terabox_id})",
-        parse_mode="Markdown",
-        reply_markup=buttons
-    )
-
-# ✅ Flask Webhook (Render-এর জন্য)
+# Flask অ্যাপ সেট আপ
 app = Flask(__name__)
 
-@app.route('/')
-def index():
-    return "Terabox Bot is Running!"
+# লগিং কনফিগারেশন
+logging.basicConfig(level=logging.INFO)
 
+# /start কমান্ড হ্যান্ডলার
+@dp.message_handler(commands=["start"])
+async def start(message: types.Message):
+    await message.answer("হ্যালো! আমি আপনার সহকারী।")
+
+# Webhook হ্যান্ডলার
 @app.route('/webhook', methods=['POST'])
 def webhook():
     json_str = request.get_data(as_text=True)
-    update = types.Update.de_json(json_str)
-    dp.process_update(update)
-    return "OK"
+    try:
+        # Aiogram 3.x তে from_json() ব্যবহার করুন
+        update = types.Update.from_json(json_str)
+        dp.process_update(update)
+        return "OK"
+    except Exception as e:
+        logging.error(f"Error processing webhook: {e}")
+        return "Error", 500
 
-# ✅ Flask সার্ভার চালু করা
-def run_flask():
-    app.run(host="0.0.0.0", port=5000)
-
-# ✅ Webhook URL সেট করা (Aiogram 3.x অনুযায়ী)
+# Webhook সেটআপের জন্য ফাংশন
 async def on_start():
-    webhook_url = "https://my-telegram-bot-s14z.onrender.com/webhook"  # Webhook URL
-    await bot.set_webhook(webhook_url)
-    # ✅ Start Webhook Handling
-    await dp.start_webhook(bot, webhook_url)
+    # ওয়েবহুক সেট করুন
+    await bot.set_webhook(WEBHOOK_URL)
+    logging.info(f"Webhook set to: {WEBHOOK_URL}")
 
-# ✅ Flask & Bot একসাথে চালানো
+# Flask এ ওয়েবহুক চালু করার জন্য
+@app.before_first_request
+def before_first_request():
+    loop = asyncio.get_event_loop()
+    loop.create_task(on_start())
+
+# Flask অ্যাপ চালু করুন
 if __name__ == "__main__":
-    Thread(target=run_flask).start()
-    asyncio.run(on_start())
+    app.run(host='0.0.0.0', port=5000, debug=False)
